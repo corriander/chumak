@@ -1,0 +1,50 @@
+[project]
+name = "chumak"
+version = "0.1.0"
+description = "Thin inference substrate: user-authored profiles, LangChain as a handler, optional provenance."
+readme = "README.md"
+requires-python = ">=3.13"
+authors = [
+    { name = "Alex Corrie", email = "alex.j.corrie@gmail.com" },
+]
+dependencies = [
+    "pydantic>=2.10",
+    "langchain>=0.3",
+    "langchain-core>=0.3",
+]
+
+[project.optional-dependencies]
+anthropic = ["langchain-anthropic>=0.3"]
+openai = ["langchain-openai>=0.2"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-mock>=3.14",
+    "ruff>=0.15",
+    "ty>=0.0.21",
+    "langchain-anthropic>=0.3",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build]
+dev-mode-dirs = ["src"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/chumak"]
+
+[tool.ruff]
+src = ["src"]
+line-length = 99
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.ty.environment]
+extra-paths = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
