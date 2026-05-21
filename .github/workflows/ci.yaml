@@ -31,7 +31,6 @@ jobs:
       contents: read
       issues: none
       pull-requests: none
-      id-token: write
 
 
     steps:
@@ -45,6 +44,10 @@ jobs:
     name: 🚀 Release
     runs-on: ubuntu-latest
     needs: validation
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write  # for PyPI trusted publishing
     if: |  # always run on default branch as long as no failures, even if validation is skipped
       always()
       && !contains(needs.*.result, 'failure')
@@ -75,6 +78,4 @@ jobs:
 
       - name: Publish to PyPI
         if: steps.release.outputs.release_created
-        run: uv publish
-        env:
-          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_TOKEN }}
+        run: uv publish --trusted-publishing always
