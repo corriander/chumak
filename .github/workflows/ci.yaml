@@ -1,0 +1,80 @@
+name: 📦🚀 CI
+
+
+on:
+  push:
+    branches:
+      - '**'
+
+
+permissions:
+  contents: write
+  pull-requests: write
+
+
+env:
+  DEFAULT_PYTHON_VERSION: '3.13'
+
+
+jobs:
+  validation:
+    name: 🧪 Validation
+    if: ${{ !contains(github.event.head_commit.message, 'chore(main)') }}  # don't run on chore(main) commits (e.g. release - it already ran)
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ${{ github.ref == 'refs/heads/main' && fromJson('["3.13"]') || fromJson('["default"]') }}
+        os: ${{ github.ref == 'refs/heads/main' && fromJson('["ubuntu-latest", "macos-latest", "windows-latest"]') || fromJson('["ubuntu-latest"]') }}
+
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      issues: none
+      pull-requests: none
+      id-token: write
+
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: corriander/gha/uv/test@main
+        env:
+          UV_PYTHON: ${{ matrix.python-version == 'default' && env.DEFAULT_PYTHON_VERSION || matrix.python-version }}
+
+  release:
+    name: 🚀 Release
+    runs-on: ubuntu-latest
+    needs: validation
+    if: |  # always run on default branch as long as no failures, even if validation is skipped
+      always()
+      && !contains(needs.*.result, 'failure')
+      && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          release-type: python
+
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v7
+        if: steps.release.outputs.release_created
+
+      - name: Build
+        if: steps.release.outputs.release_created
+        run: uv build
+
+      - uses: svenstaro/upload-release-action@v2
+        if: steps.release.outputs.release_created
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: dist/*
+          tag: ${{ steps.release.outputs.tag_name }}
+          file_glob: true
+          make_latest: false
+
+      - name: Publish to PyPI
+        if: steps.release.outputs.release_created
+        run: uv publish
+        env:
+          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_TOKEN }}
