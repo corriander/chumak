@@ -137,4 +137,4 @@ result.meta.derived_from     # [...]
 
 ## Tooling
 
-uv, Python 3.13, ruff, ty, pytest.
+uv, Python 3.12+, ruff, ty, pytest. See [CONTRIBUTING.md](CONTRIBUTING.md) for dev setup, the integration test, and quality-check commands.

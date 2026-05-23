@@ -3,7 +3,7 @@ name = "chumak"
 version = "0.1.0"
 description = "Thin inference substrate: user-authored profiles, LangChain as a handler, optional provenance."
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 authors = [
     { name = "Alex Corrie", email = "alex.j.corrie@gmail.com" },
 ]
@@ -48,3 +48,6 @@ extra-paths = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "integration: requires a live inference backend (use --integration to enable)",
+]
