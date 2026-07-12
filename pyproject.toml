@@ -1,6 +1,6 @@
 [project]
 name = "chumak"
-version = "0.1.1"
+version = "0.1.2"
 description = "Thin inference substrate: user-authored profiles, LangChain as a handler, optional provenance."
 readme = "README.md"
 requires-python = ">=3.12"
