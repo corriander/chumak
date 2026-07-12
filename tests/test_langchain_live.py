@@ -91,3 +91,24 @@ def test_langchain_handler_against_openai_compat() -> None:
     assert result.meta.produced_by.profile == "local-openai"
     assert result.meta.produced_by.model.startswith("openai:")
     assert result.meta.generated_at is not None
+
+
+@pytest.mark.integration
+def test_langchain_handler_untyped_plaintext() -> None:
+    """End-to-end untyped path: no output_schema, plain-text `.invoke()`.
+
+    This is the shape a liveness/smoke probe or one-shot free-text question
+    uses — it validates the endpoint and the model's free-text response
+    without asking the model to satisfy a Pydantic schema.
+    """
+    profile = _build_profile()
+
+    result = chumak.infer(
+        prompt="Reply with the single word: pong.",
+        profile=profile,
+    )
+
+    assert isinstance(result.payload, str)
+    assert result.payload.strip() != ""
+    assert result.meta.produced_by.profile == "local-openai"
+    assert result.meta.generated_at is not None

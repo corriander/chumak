@@ -15,15 +15,20 @@ A small library that abstracts away which LLM you're calling and how.
 2. Load a profile via `ProfileLoader` (with inheritance + env-var overrides)
 3. Call `infer(prompt=..., output_schema=..., profile=...)` and get back a validated
    pydantic payload, normalised citations, and (optionally) a provenance `Meta` stamp.
+   `output_schema` is **optional**: omit it for an untyped call whose `payload` is the
+   model's plain response text (langchain handler only — see below).
 
 Two built-in handlers:
 
 - **`langchain`** — uses `langchain.chat_models.init_chat_model(profile.model)` so a
   single identifier (`anthropic:claude-opus-4-7`, `openai:gpt-5`, …) routes to the
-  right provider. Structured output, citations, and token usage all handled.
+  right provider. Structured output, citations, and token usage all handled. With an
+  `output_schema` the call returns a validated instance; without one it returns the
+  model's plain response text (a liveness/smoke probe or one-shot free-text question).
 - **`subprocess`** — shells out to a CLI (`claude --print`, `codex exec`, etc.).
   Useful for prompt iteration via an existing, authorised tool.
   Schema is injected into the prompt as JSON Schema; stdout is parsed and validated.
+  Requires an `output_schema` — untyped generation is a langchain-handler capability.
 
 ## Profiles
 
