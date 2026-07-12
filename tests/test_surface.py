@@ -39,6 +39,17 @@ def test_infer_returns_payload_and_meta(stub_handler) -> None:
     assert result.meta.generated_at is not None
 
 
+def test_infer_without_schema_returns_text_payload(stub_handler) -> None:
+    # Untyped call: output_schema omitted, payload is the model's plain text.
+    stub_handler(HandlerResult(payload="pong", raw=None, rendered_prompt="ping"))
+
+    result = infer(prompt="ping", profile=_profile())
+
+    assert result.payload == "pong"
+    assert result.meta.produced_by.profile == "claude"
+    assert result.meta.generated_at is not None
+
+
 def test_infer_with_provenance_populates_artefact_fields(stub_handler) -> None:
     payload = SampleOutput(title="Haul ore", bounty=42_000)
     stub_handler(HandlerResult(payload=payload, raw=None, rendered_prompt="extract"))

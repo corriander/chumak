@@ -60,12 +60,21 @@ class SubprocessHandler:
     def execute(
         self,
         prompt: str,
-        output_schema: type[BaseModel],
+        output_schema: type[BaseModel] | None,
         profile: Profile,
     ) -> HandlerResult:
         if not profile.is_subprocess:
             raise ValueError(
                 f"SubprocessHandler called with non-subprocess profile {profile.name!r}"
+            )
+        if output_schema is None:
+            # The subprocess contract *is* the injected JSON Schema: without one
+            # there is nothing to instruct the CLI to emit or to validate its
+            # stdout against. Untyped generation is a LangChain-handler
+            # capability; a subprocess profile must supply a schema.
+            raise ValueError(
+                f"SubprocessHandler requires an output_schema (profile {profile.name!r}): "
+                "untyped/plain-text inference is only supported by the langchain handler"
             )
         assert profile.command is not None
         assert profile.prompt_delivery is not None

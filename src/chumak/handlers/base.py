@@ -3,7 +3,8 @@
 A handler executes an inference request against some transport (a LangChain
 chat model, a CLI subprocess, …) and returns:
 
-  - `payload`: the parsed `output_schema` instance.
+  - `payload`: the parsed `output_schema` instance, or — when the call is
+    untyped (`output_schema is None`) — the model's plain response text.
   - `raw`: whatever native object the transport produced (for the meta
     builder to mine for cost / citations).
   - `rendered_prompt`: the exact text sent to the transport, after any
@@ -44,6 +45,6 @@ class Handler(Protocol):
     def execute(
         self,
         prompt: str,
-        output_schema: type[BaseModel],
+        output_schema: type[BaseModel] | None,
         profile: Profile,
     ) -> HandlerResult: ...

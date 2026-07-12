@@ -49,6 +49,17 @@ def test_build_subprocess_prompt_embeds_schema() -> None:
     assert '"name"' in rendered  # field from schema landed in the prompt
 
 
+def test_execute_without_schema_raises(mocker) -> None:
+    # Untyped inference is a langchain-handler capability; a subprocess profile
+    # has no schema to inject or validate against, so it must refuse loudly
+    # (and never shell out).
+    handler = SubprocessHandler()
+    run = mocker.patch.object(handler, "_run")
+    with pytest.raises(ValueError, match="requires an output_schema"):
+        handler.execute(prompt="extract", output_schema=None, profile=_profile())
+    run.assert_not_called()
+
+
 def test_execute_parses_plain_json(mocker) -> None:
     handler = SubprocessHandler()
     mocker.patch.object(

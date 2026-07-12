@@ -19,7 +19,7 @@ from chumak.response import InferResult, Provenance
 def infer(
     *,
     prompt: str,
-    output_schema: type[BaseModel],
+    output_schema: type[BaseModel] | None = None,
     profile: Profile,
     provenance: Provenance | None = None,
 ) -> InferResult:
@@ -27,8 +27,13 @@ def infer(
 
     Arguments:
         prompt: Verbatim prompt text. The library does no templating.
-        output_schema: A Pydantic `BaseModel` subclass. The handler will
-            return a validated instance of this in `result.payload`.
+        output_schema: Optional Pydantic `BaseModel` subclass. When given, the
+            handler returns a validated instance of it in `result.payload`.
+            When omitted (``None``), the call is untyped: `result.payload` is
+            the model's plain response text, and no structured-output
+            translation is applied. Not every handler supports the untyped
+            path — the subprocess handler requires a schema (it injects the
+            JSON schema into the prompt) and raises without one.
         profile: A loaded `Profile` (usually from `ProfileLoader.load`).
         provenance: Optional. Pass to stamp artefact identifiers and
             upstream references into `result.meta`.
