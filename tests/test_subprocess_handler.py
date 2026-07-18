@@ -7,6 +7,7 @@ hermetic and fast.
 
 from __future__ import annotations
 
+import json
 import subprocess
 from typing import Any
 
@@ -82,6 +83,18 @@ def test_execute_parses_fenced_json(mocker) -> None:
     )
     result = handler.execute(prompt="extract", output_schema=Out, profile=_profile())
     assert result.payload.count == 7
+
+
+def test_execute_parses_bare_json_with_fence_inside_string(mocker) -> None:
+    # Regression: stdout is valid bare JSON whose string value contains a
+    # ```json fence (e.g. a markdown field quoting fenced code). Extraction
+    # must prefer whole-stdout JSON over the inner fence.
+    stdout = json.dumps({"name": 'see ```json\n{"not": "the payload"}\n``` above', "count": 3})
+    handler = SubprocessHandler()
+    mocker.patch.object(handler, "_run", return_value=_fake_completed(stdout))
+    result = handler.execute(prompt="extract", output_schema=Out, profile=_profile())
+    assert isinstance(result.payload, Out)
+    assert result.payload.count == 3
 
 
 def test_execute_raises_on_non_zero_exit(mocker) -> None:

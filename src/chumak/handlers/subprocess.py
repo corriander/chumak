@@ -51,9 +51,16 @@ def _build_subprocess_prompt(prompt: str, output_schema: type[BaseModel]) -> str
 
 
 def _extract_json(stdout: str) -> str:
+    """Bare JSON wins over fence extraction: a fence *inside* a JSON string
+    value must never be mistaken for the payload's wrapper.
+    """
     stripped = stdout.strip()
-    match = _FENCE_RE.search(stripped)
-    return match.group(1) if match else stripped
+    try:
+        json.loads(stripped)
+    except json.JSONDecodeError:
+        match = _FENCE_RE.search(stripped)
+        return match.group(1) if match else stripped
+    return stripped
 
 
 class SubprocessHandler:
