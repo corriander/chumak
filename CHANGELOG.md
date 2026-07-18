@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.0](https://github.com/corriander/chumak/compare/v0.1.2...v0.2.0) (2026-07-18)
+
+
+### Features
+
+* **handlers:** make output_schema optional for untyped plain-text inference ([#21](https://github.com/corriander/chumak/issues/21)) ([f182c5e](https://github.com/corriander/chumak/commit/f182c5e28c213b159be36272b5f38c5e5ce5756f))
+
+
+### Bug Fixes
+
+* **handlers:** prefer bare-JSON stdout over fence extraction ([#28](https://github.com/corriander/chumak/issues/28)) ([cb7a5e3](https://github.com/corriander/chumak/commit/cb7a5e331821e228949290a16feed10e5fff82bf))
+
 ## [0.1.2](https://github.com/corriander/chumak/compare/v0.1.1...v0.1.2) (2026-07-12)
 
 
