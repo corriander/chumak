@@ -28,7 +28,10 @@ env:
 jobs:
   validation:
     name: 🧪 Validation
-    if: ${{ !contains(github.event.head_commit.message, 'chore(main)') }}  # don't run on chore(main) commits (e.g. release - it already ran)
+    # Skip on release-please's own release commit — it already ran pre-merge.
+    # `startsWith`, not `contains`: the message includes the body, so a commit
+    # that merely *mentions* the release prefix in prose would skip all checks.
+    if: ${{ !startsWith(github.event.head_commit.message, 'chore(main)') }}
     strategy:
       fail-fast: false
       matrix:
@@ -53,7 +56,7 @@ jobs:
     name: 🛡️ QA
     # Formatting/lint/types are platform-independent, so this runs once rather
     # than across the validation matrix.
-    if: ${{ !contains(github.event.head_commit.message, 'chore(main)') }}  # as validation
+    if: ${{ !startsWith(github.event.head_commit.message, 'chore(main)') }}  # as validation
     runs-on: ubuntu-latest
     permissions:
       contents: read
