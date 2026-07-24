@@ -48,7 +48,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: corriander/gha/uv/test@main
+      - uses: corriander/gha/uv/test@v0.6.1
         env:
           UV_PYTHON: ${{ matrix.python-version == 'default' && env.DEFAULT_PYTHON_VERSION || matrix.python-version }}
 
