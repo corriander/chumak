@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.1](https://github.com/corriander/chumak/compare/v0.2.0...v0.2.1) (2026-07-24)
+
+
+### Bug Fixes
+
+* **deps:** bump langchain from 1.3.7 to 1.3.14 ([#24](https://github.com/corriander/chumak/issues/24)) ([405574c](https://github.com/corriander/chumak/commit/405574c1dad399b062c99af7865f3ecc0aec3fe1))
+* **deps:** bump langchain-core from 1.4.6 to 1.4.9 ([#25](https://github.com/corriander/chumak/issues/25)) ([f59f72d](https://github.com/corriander/chumak/commit/f59f72dc2fdd93da9f307cdc5fa39d178cb27f0c))
+* **deps:** bump langchain-openai from 1.3.0 to 1.3.5 ([#23](https://github.com/corriander/chumak/issues/23)) ([10fa607](https://github.com/corriander/chumak/commit/10fa607612d4e61196294b57f74eaa3243b6609a))
+* **deps:** bump langchain-openai from 1.3.5 to 1.4.1 ([#32](https://github.com/corriander/chumak/issues/32)) ([42589d1](https://github.com/corriander/chumak/commit/42589d148ce04c9d853fcd548eaba52b12953b89))
+* **deps:** raise langchain floors to 1.0 ([7ef7512](https://github.com/corriander/chumak/commit/7ef7512064d698b10ab0241259ddef972b30ca4a))
+
 ## [0.2.0](https://github.com/corriander/chumak/compare/v0.1.2...v0.2.0) (2026-07-18)
 
 
