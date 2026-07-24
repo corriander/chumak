@@ -12,6 +12,15 @@ permissions:
   pull-requests: write
 
 
+# Serialise per-branch runs so a burst of merges can't pile up and exhaust the
+# account's concurrent-job cap. On branches/PRs, cancel superseded runs for fast
+# feedback; on main, queue instead of cancel so an in-flight PyPI publish is
+# never killed mid-upload.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+
 env:
   DEFAULT_PYTHON_VERSION: '3.13'
 
