@@ -93,23 +93,25 @@ loader = ProfileLoader(
     search_paths=[Path.home() / ".config/my-app/chumak/profiles"],
     env_prefix="MYAPP",
 )
-loader.names()                # -> ["claude", "claude-creative", ...]
+loader.names()  # -> ["claude", "claude-creative", ...]
 profile = loader.load("claude")
 
 from pydantic import BaseModel
 
+
 class AnneSchema(BaseModel):
     title: str
     value: int
+
 
 result = infer(
     prompt="Extract title and value from this text: ...",
     output_schema=AnneSchema,
     profile=profile,
 )
-result.payload          # -> MissionTitle(title=..., bounty=...)
-result.citations        # -> [Citation, ...] (if the model supplied any)
-result.meta             # -> Meta with cost, generated_at, model identity
+result.payload  # -> MissionTitle(title=..., bounty=...)
+result.citations  # -> [Citation, ...] (if the model supplied any)
+result.meta  # -> Meta with cost, generated_at, model identity
 ```
 
 ### With provenance
@@ -126,8 +128,8 @@ result = infer(
         artefact_id="artifact-type:2026-05-20T12:34:56Z",
     ),
 )
-result.meta.artefact_type    # "mission_title@v1"
-result.meta.derived_from     # [...]
+result.meta.artefact_type  # "mission_title@v1"
+result.meta.derived_from  # [...]
 ```
 
 ## Design notes

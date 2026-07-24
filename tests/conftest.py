@@ -80,7 +80,7 @@ class _FakeHandler:
     def execute(
         self,
         prompt: str,
-        output_schema: type,
+        output_schema: type[BaseModel] | None,
         profile: Profile,
     ) -> HandlerResult:
         assert _FakeHandler._result is not None, (
@@ -125,9 +125,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     )
 
 
-def pytest_collection_modifyitems(
-    config: pytest.Config, items: list[pytest.Item]
-) -> None:
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     if not config.getoption("--integration"):
         skip = pytest.mark.skip(reason="Pass --integration to run live backend tests")
         for item in items:

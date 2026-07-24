@@ -61,9 +61,7 @@ def _profile() -> Profile:
 
 def test_untyped_returns_plain_text(monkeypatch: pytest.MonkeyPatch) -> None:
     model = _FakeModel(text="hello from the edge")
-    monkeypatch.setattr(
-        "chumak.handlers.langchain.init_chat_model", lambda m, **k: model
-    )
+    monkeypatch.setattr("chumak.handlers.langchain.init_chat_model", lambda m, **k: model)
 
     result = LangChainHandler().execute(prompt="ping", output_schema=None, profile=_profile())
 
@@ -78,9 +76,7 @@ def test_typed_returns_validated_payload(monkeypatch: pytest.MonkeyPatch) -> Non
     parsed = ColourTag(colour="crimson", is_warm=True)
     structured = _FakeStructured(parsed=parsed, raw=AIMessage(content="{...}"))
     model = _FakeModel(text="unused", structured=structured)
-    monkeypatch.setattr(
-        "chumak.handlers.langchain.init_chat_model", lambda m, **k: model
-    )
+    monkeypatch.setattr("chumak.handlers.langchain.init_chat_model", lambda m, **k: model)
 
     result = LangChainHandler().execute(
         prompt="classify", output_schema=ColourTag, profile=_profile()
@@ -93,9 +89,7 @@ def test_typed_returns_validated_payload(monkeypatch: pytest.MonkeyPatch) -> Non
 def test_typed_raises_on_parsing_error(monkeypatch: pytest.MonkeyPatch) -> None:
     structured = _FakeStructured(parsed=None, raw=AIMessage(content="oops"), parsing_error="boom")
     model = _FakeModel(text="unused", structured=structured)
-    monkeypatch.setattr(
-        "chumak.handlers.langchain.init_chat_model", lambda m, **k: model
-    )
+    monkeypatch.setattr("chumak.handlers.langchain.init_chat_model", lambda m, **k: model)
 
     with pytest.raises(ValueError, match="Structured output parsing failed"):
         LangChainHandler().execute(prompt="x", output_schema=ColourTag, profile=_profile())
