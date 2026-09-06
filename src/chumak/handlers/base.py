@@ -11,13 +11,21 @@ chat model, a CLI subprocess, …) and returns:
     handler-level augmentation (e.g. JSON Schema injection for subprocess
     handlers). The meta builder hashes this for
     `produced_by.prompt_actual_sha256`.
+  - `attachments`: digests of the attachments the handler actually sent,
+    stamped into `produced_by.attachments`. Empty for text-only calls.
+
+Attachment support is a per-handler capability. A handler that cannot carry
+them must reject a non-empty `attachments` loudly rather than drop them.
 """
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from chumak.attachments import Attachment, AttachmentDigest
 
 if TYPE_CHECKING:
     from chumak.profile import Profile
@@ -38,6 +46,10 @@ class HandlerResult(BaseModel):
             "The actual text sent to the underlying transport, after any "
             "handler-level augmentation. Hashed for provenance."
         ),
+    )
+    attachments: list[AttachmentDigest] = Field(
+        default_factory=list,
+        description="Digests of the attachments actually sent, in order.",
     )
 
 
@@ -77,4 +89,5 @@ class Handler(Protocol):
         prompt: str,
         output_schema: type[BaseModel] | None,
         profile: Profile,
+        attachments: Sequence[Attachment] = (),
     ) -> HandlerResult: ...

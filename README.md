@@ -215,6 +215,31 @@ result.citations  # -> [Citation, ...] (if the model supplied any)
 result.meta  # -> Meta with cost, generated_at, model identity
 ```
 
+### With an image
+
+```python
+from chumak import Attachment
+
+result = infer(
+    prompt="Extract the mission title and reward from this screenshot.",
+    attachments=[Attachment(path=Path("shot.png"))],  # mime sniffed from the extension
+    output_schema=AnneSchema,
+    profile=profile,
+)
+result.meta.produced_by.attachments  # -> [AttachmentDigest(sha256=..., mime="image/png")]
+```
+
+Attachments are **langchain-handler only**: they become one multimodal message (text
+part + base64 image parts) that LangChain translates to the provider's native shape, so
+`anthropic:*`, `openai:*`, and `openai:*` + `base_url` (local OpenAI-compatible servers)
+all work. Image MIME types only, local paths only. The other handlers raise
+`ProfileCapabilityError` rather than drop the images: agent CLIs behind a `subprocess`
+profile already take images by path reference in the prompt (`@{path}`), and that
+remains the idiom there; `systemone` takes a text state only. Each attachment's SHA-256
+and MIME land in `meta.produced_by.attachments`; `prompt_actual_sha256` still covers the
+text alone. If you make the call yourself (see "Orchestrate your own loop"), pass
+`attachments=[a.digest() for a in ...]` to `build_meta` to get the same record.
+
 ### With provenance
 
 ```python

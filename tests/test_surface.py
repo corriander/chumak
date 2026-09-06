@@ -6,6 +6,7 @@ for a deterministic fake, so the surface tests stay hermetic.
 
 from __future__ import annotations
 
+from chumak.attachments import AttachmentDigest
 from chumak.handlers.base import HandlerResult
 from chumak.handlers.types import HandlerType
 from chumak.profile import Profile
@@ -76,3 +77,16 @@ def test_infer_with_provenance_populates_artefact_fields(stub_handler) -> None:
 
     assert result.meta.artefact_type == "mission_title@v1"
     assert result.meta.artefact_id == "screenshot:abc"
+
+
+def test_infer_stamps_handler_attachment_digests_into_meta(stub_handler) -> None:
+    digest = AttachmentDigest(sha256="ab" * 32, mime="image/png")
+    stub_handler(
+        HandlerResult(
+            payload="a red square", raw=None, rendered_prompt="what", attachments=[digest]
+        )
+    )
+
+    result = infer(prompt="what", profile=_profile())
+
+    assert result.meta.produced_by.attachments == [digest]

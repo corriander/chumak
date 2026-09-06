@@ -8,6 +8,11 @@ The profile shape stays minimal: a verbatim `command` (parsed via
 `shlex.split`), a delivery channel (`stdin` or trailing argv), and a
 timeout. Output is expected as JSON on stdout, optionally wrapped in a
 fenced code block.
+
+Attachments are rejected. Agent CLIs already carry images by path reference
+inside the prompt (``@{path}``, expanded by the CLI) — that is the subprocess
+idiom, and merging it with the API-style attachment convention would be
+confusing. Revisit if a consumer asks.
 """
 
 from __future__ import annotations
@@ -16,11 +21,13 @@ import json
 import re
 import shlex
 import subprocess
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
+from chumak.attachments import Attachment
 from chumak.errors import ProfileCapabilityError
 from chumak.handlers.base import HandlerResult
 from chumak.handlers.types import PromptDelivery
@@ -70,10 +77,17 @@ class SubprocessHandler:
         prompt: str,
         output_schema: type[BaseModel] | None,
         profile: Profile,
+        attachments: Sequence[Attachment] = (),
     ) -> HandlerResult:
         if not profile.is_subprocess:
             raise ProfileCapabilityError(
                 f"SubprocessHandler called with non-subprocess profile {profile.name!r}"
+            )
+        if attachments:
+            raise ProfileCapabilityError(
+                f"SubprocessHandler does not accept attachments (profile {profile.name!r}, "
+                f"{len(attachments)} given): reference image paths in the prompt using the "
+                "CLI's own idiom (e.g. `@{path}`); attachments are a langchain-handler capability"
             )
         if output_schema is None:
             # The subprocess contract *is* the injected JSON Schema: without one

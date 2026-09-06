@@ -49,6 +49,8 @@ CHUMAK_TEST_OPENAI_MODEL=qwen2.5-7b-instruct \
 
 The test uses a tiny `ColourTag { colour: str, is_warm: bool }` schema — small enough that any reasonable 7B-class instruct model handles it. If you add coverage for a new handler or option, add a sibling test under the same marker and document the env vars it needs here.
 
+The attachment test (`test_langchain_handler_with_image_attachment`) sends a generated solid-red PNG and needs a **vision-capable** model. Point `CHUMAK_TEST_OPENAI_VISION_MODEL` at one (e.g. a `qwen2.5-vl` / `llava` served by llama.cpp or vLLM); it falls back to `CHUMAK_TEST_OPENAI_MODEL` when unset. The PNG comes from the `red_png` fixture (`solid_png` in `tests/conftest.py`) — no imaging library needed.
+
 ### Integration test — System One handler against TypeSafe (experimental)
 
 Marker-gated *and* key-gated: skipped unless `--integration` is passed **and**
