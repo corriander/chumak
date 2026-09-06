@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
+from chumak.errors import ProfileCapabilityError
 from chumak.handlers.base import HandlerResult
 from chumak.handlers.types import PromptDelivery
 
@@ -71,7 +72,7 @@ class SubprocessHandler:
         profile: Profile,
     ) -> HandlerResult:
         if not profile.is_subprocess:
-            raise ValueError(
+            raise ProfileCapabilityError(
                 f"SubprocessHandler called with non-subprocess profile {profile.name!r}"
             )
         if output_schema is None:

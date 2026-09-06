@@ -41,7 +41,9 @@ def infer(
     handler_cls = HANDLER_REGISTRY[profile.handler]
     handler = handler_cls()
     handler_result = handler.execute(prompt=prompt, output_schema=output_schema, profile=profile)
-    meta = build_meta(profile=profile, handler_result=handler_result, provenance=provenance)
+    # A handler that reports no rendered prompt sent the caller's text verbatim.
+    sent = handler_result.rendered_prompt if handler_result.rendered_prompt is not None else prompt
+    meta = build_meta(handler_result.raw, profile=profile, prompt=sent, provenance=provenance)
     return InferResult(
         payload=handler_result.payload,
         citations=meta.citations,
