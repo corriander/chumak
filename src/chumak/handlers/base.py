@@ -15,7 +15,7 @@ chat model, a CLI subprocess, …) and returns:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -39,6 +39,24 @@ class HandlerResult(BaseModel):
             "handler-level augmentation. Hashed for provenance."
         ),
     )
+
+
+@runtime_checkable
+class UsageSource(Protocol):
+    """A handler `raw` that can report its own token usage.
+
+    The meta builder needs tokens out of every transport, but it cannot
+    grow an `isinstance` branch per handler without becoming the one place
+    that knows about all of them. Instead a `raw` object opts in by
+    implementing this method, and `build_meta` asks rather than inspects.
+
+    LangChain's `AIMessage` predates this and is special-cased in
+    `chumak.meta`; everything added since is expected to implement it.
+    """
+
+    def token_usage(self) -> tuple[int | None, int | None]:
+        """Return `(tokens_in, tokens_out)`, either of which may be `None`."""
+        ...
 
 
 class Handler(Protocol):

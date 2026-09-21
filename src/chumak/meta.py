@@ -14,7 +14,7 @@ from typing import Any
 
 from langchain_core.messages import AIMessage
 
-from chumak.handlers.base import HandlerResult
+from chumak.handlers.base import HandlerResult, UsageSource
 from chumak.profile import Profile
 from chumak.response import Citation, Cost, Meta, ProducedBy, Provenance
 
@@ -57,6 +57,9 @@ def _extract_cost(raw: Any) -> Cost:
             tokens_in=usage.get("input_tokens"),
             tokens_out=usage.get("output_tokens"),
         )
+    if isinstance(raw, UsageSource):
+        tokens_in, tokens_out = raw.token_usage()
+        return Cost(tokens_in=tokens_in, tokens_out=tokens_out)
     return Cost()
 
 

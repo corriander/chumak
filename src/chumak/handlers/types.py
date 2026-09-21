@@ -13,6 +13,7 @@ from enum import StrEnum
 class HandlerType(StrEnum):
     LANGCHAIN = "langchain"
     SUBPROCESS = "subprocess"
+    SYSTEMONE = "systemone"
 
 
 class PromptDelivery(StrEnum):

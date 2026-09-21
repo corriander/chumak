@@ -18,7 +18,7 @@ A small library that abstracts away which LLM you're calling and how.
    `output_schema` is **optional**: omit it for an untyped call whose `payload` is the
    model's plain response text (langchain handler only — see below).
 
-Two built-in handlers:
+Three built-in handlers:
 
 - **`langchain`** — uses `langchain.chat_models.init_chat_model(profile.model)` so a
   single identifier (`anthropic:claude-opus-4-7`, `openai:gpt-5`, …) routes to the
@@ -29,6 +29,70 @@ Two built-in handlers:
   Useful for prompt iteration via an existing, authorised tool.
   Schema is injected into the prompt as JSON Schema; stdout is parsed and validated.
   Requires an `output_schema` — untyped generation is a langchain-handler capability.
+- **`systemone`** — ⚠️ **experimental.** Calls TypeSafe's System One decision model
+  (Jev). Unlike the other two this is not a text generator: it answers *typed
+  questions* about a state and returns calibrated probabilities. See below.
+
+### The `systemone` handler (experimental)
+
+[TypeSafe System One](https://docs.typesafe.ai/concepts/system-one) takes a `state`
+plus a map of typed questions and answers all of them in one non-autoregressive pass.
+It emits no text.
+
+chumak bridges its contract by **deriving the question map from `output_schema`**, so
+consumers call `infer()` exactly as they would for any other handler:
+
+| Field type       | Question | Criteria                                           |
+| ---------------- | -------- | -------------------------------------------------- |
+| `bool`           | `noul`   | optional `{"true": ..., "false": ...}`             |
+| `Literal` / Enum | `choice` | option → rubric map (max 255 options)              |
+| `int` / `float`  | `score`  | **required** ordered list of 2–10 level rubrics    |
+
+A field's `description` becomes the question; criteria come from
+`Field(json_schema_extra={"criteria": ...})`.
+
+```python
+class Triage(BaseModel):
+    department: Literal["billing", "technical", "sales"] = Field(
+        description="Which team should handle this?",
+        json_schema_extra={
+            "criteria": {"billing": "Payments…", "technical": "Bugs…", "sales": "Pricing…"}
+        },
+    )
+    is_urgent: bool = Field(description="Does this convey urgency?")
+    frustration: int = Field(
+        description="How frustrated is the customer?",
+        json_schema_extra={"criteria": ["Calm", "Frustrated", "Very angry"]},
+    )
+
+
+result = chumak.infer(prompt=ticket_text, output_schema=Triage, profile=jev)
+result.payload.department  # "billing"
+result.meta.cost.tokens_in  # 296
+```
+
+The payload is a plain validated schema instance. **Probabilities and `confidence`
+are not on it** — they ride on the handler's `raw` (a `SystemOneRaw`), along with
+token usage and call duration. Note one asymmetry in the vendor API: choice and score
+answers carry `confidence`, **noul answers do not** — there the probability itself is
+the whole signal.
+
+Untyped calls are rejected: no schema means no questions, and Jev generates no text.
+
+Retries on `429`/`529` with exponential backoff are handled inside the handler; the
+transport is stdlib-only, so this adds no dependency.
+
+```toml
+# ~/.config/<your-app>/chumak/profiles/jev.toml
+handler = "systemone"
+model = "jev-latest"
+
+[model_kwargs]
+# api_key MUST come from the env overlay, never from this file:
+#   {APP}_PROFILE_JEV_MODEL_KWARGS__API_KEY=sk-...
+timeout = 30
+max_retries = 3
+```
 
 ## Profiles
 
