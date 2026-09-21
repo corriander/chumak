@@ -29,24 +29,30 @@ Field type            Question   Criteria source
 Probabilities, per-option distributions and `confidence` are deliberately
 *not* on the payload — the payload is a plain validated instance of the
 caller's schema. They ride in `raw` (a `SystemOneRaw`), alongside token
-usage, which the meta builder mines via the `UsageSource` protocol.
+usage and estimated cost, which the meta builder mines via the
+`UsageSource` protocol.
 
 Untyped calls are rejected: without a schema there are no questions to ask,
 so there is nothing for Jev to answer. This mirrors the subprocess handler.
 
-Wire format: https://docs.typesafe.ai/api.md (snapshot 2026-09-21).
+Transport
+---------
+Calls go through the vendor's own `typesafe-sdk` (optional extra
+``chumak[typesafe]``). Retry/backoff is **the SDK's job, not ours**: its
+`RetryPolicy` honours `Retry-After`, applies jitter, and retries connection
+and timeout errors — none of which a hand-rolled status-code loop does, and
+all of which matter when a consumer walks a corpus in a tight loop. The
+`transport` seam is kept so unit tests can drive an `httpx2.MockTransport`
+without a network or a key.
 """
 
 from __future__ import annotations
 
 import enum
-import json
 import time
-import urllib.error
-import urllib.request
 from dataclasses import dataclass
 from dataclasses import field as dc_field
-from typing import TYPE_CHECKING, Any, Literal, Protocol, get_args, get_origin
+from typing import TYPE_CHECKING, Any, Literal, get_args, get_origin
 
 from pydantic import BaseModel
 from pydantic.fields import FieldInfo
@@ -54,15 +60,28 @@ from pydantic.fields import FieldInfo
 from chumak.handlers.base import HandlerResult
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
-
     from chumak.profile import Profile
 
-DEFAULT_ENDPOINT = "https://api.typesafe.ai/v1/systemone"
+try:  # pragma: no cover - trivial import guard
+    from typesafe_sdk import (
+        Choice,
+        ChoiceAnswer,
+        Noul,
+        NoulAnswer,
+        NoulCriteria,
+        RetryPolicy,
+        Score,
+        ScoreAnswer,
+        TypeSafeClient,
+    )
+
+    _SDK_AVAILABLE = True
+except ImportError:  # pragma: no cover - exercised only without the extra
+    _SDK_AVAILABLE = False
 
 # Price snapshot. Output tokens are free at this tier. Dated deliberately:
 # this is a vendor price, and a stale constant that silently under-reports
-# spend is worse than no constant at all. Cross-check against the Typesafe
+# spend is worse than no constant at all. Cross-check against the TypeSafe
 # usage page when reconciling (ALS-96).
 PRICE_SNAPSHOT_DATE = "2026-09-19"
 INPUT_USD_PER_MTOK = 0.042
@@ -73,16 +92,15 @@ MAX_CHOICE_OPTIONS = 255
 MIN_SCORE_LEVELS = 2
 MAX_SCORE_LEVELS = 10
 
-# Retried with backoff; every other status is raised immediately.
-RETRY_STATUSES = frozenset({429, 529})
-
-_DEFAULT_TIMEOUT = 30.0
-_DEFAULT_MAX_RETRIES = 3
-_DEFAULT_BACKOFF_BASE = 0.5
 # A noul answer is a probability, not a boolean. Collapsing it to the
 # schema's `bool` needs a cut point; 0.5 is the neutral one. Callers who
 # care should read `raw` for the probability rather than move this.
 _DEFAULT_NOUL_THRESHOLD = 0.5
+
+_INSTALL_HINT = (
+    "the System One handler needs the vendor SDK: `uv sync --extra typesafe` "
+    "(or `pip install 'chumak[typesafe]'`)"
+)
 
 
 class SystemOneError(RuntimeError):
@@ -101,14 +119,12 @@ class SystemOneRaw:
     distributions and `confidence` — everything the payload drops.
     """
 
-    endpoint: str
     model: str
-    request: dict[str, Any]
-    response: dict[str, Any]
+    questions: dict[str, Any]
     answers: dict[str, Any] = dc_field(default_factory=dict)
     usage: dict[str, Any] = dc_field(default_factory=dict)
+    request_id: str | None = None
     duration_ms: float | None = None
-    attempts: int = 1
 
     def token_usage(self) -> tuple[int | None, int | None]:
         """Satisfy `chumak.handlers.base.UsageSource` for the meta builder."""
@@ -120,11 +136,12 @@ class SystemOneRaw:
         )
 
     def estimated_usd(self) -> float | None:
-        """Best-effort USD for this call, at the dated price constants above.
+        """USD for this call, at the dated price constants above.
 
-        `None` when the response carried no usage block. Note this is an
-        *estimate* against a snapshotted price — Typesafe's usage page is
-        the billing source of truth.
+        `None` when the response carried no usage block. This is an
+        *estimate* against a snapshotted price — TypeSafe's usage page is
+        the billing source of truth, and `request_id` is how you reconcile
+        an individual call against it.
         """
         tokens_in, tokens_out = self.token_usage()
         if tokens_in is None and tokens_out is None:
@@ -137,52 +154,14 @@ class SystemOneRaw:
         """Confidence for one answer, where the answer type carries one.
 
         Choice and Score answers carry `confidence`; **noul answers do not**
-        — for those the probability in `noul` is the whole signal.
+        — for those the probability in `noul` is the whole signal. This is
+        the vendor's own type shape, not a chumak limitation.
         """
         answer = self.answers.get(question_id)
         if not isinstance(answer, dict):
             return None
         value = answer.get("confidence")
         return float(value) if isinstance(value, int | float) else None
-
-
-class Transport(Protocol):
-    """The HTTP seam. Swapped for a fake in unit tests."""
-
-    def post(
-        self,
-        url: str,
-        *,
-        headers: Mapping[str, str],
-        body: bytes,
-        timeout: float,
-    ) -> tuple[int, bytes]: ...
-
-
-class UrllibTransport:
-    """Default transport: stdlib only, so the handler adds no dependency.
-
-    A single JSON POST does not justify pulling `httpx` or `typesafe-sdk`
-    into a library whose whole point is being thin. Non-2xx responses are
-    returned as `(status, body)` rather than raised, so the retry policy
-    lives in one place (the handler) instead of being split across the
-    transport boundary.
-    """
-
-    def post(
-        self,
-        url: str,
-        *,
-        headers: Mapping[str, str],
-        body: bytes,
-        timeout: float,
-    ) -> tuple[int, bytes]:
-        request = urllib.request.Request(url, data=body, headers=dict(headers), method="POST")
-        try:
-            with urllib.request.urlopen(request, timeout=timeout) as response:
-                return response.status, response.read()
-        except urllib.error.HTTPError as exc:
-            return exc.code, exc.read()
 
 
 def _criteria_from_field(info: FieldInfo) -> Any:
@@ -305,12 +284,15 @@ def _build_score(name: str, info: FieldInfo) -> dict[str, Any]:
 
 
 def questions_from_schema(output_schema: type[BaseModel]) -> dict[str, dict[str, Any]]:
-    """Translate a Pydantic schema into a Jev `questions` map.
+    """Translate a Pydantic schema into a Jev `questions` map, as plain dicts.
 
-    Public because the question map is the reusable artefact of an
-    experiment: being able to inspect (and diff) exactly what was asked
-    matters more than the handler's own plumbing. Question ids are field
-    names, which is also how answers are keyed on the way back.
+    Public, and deliberately SDK-free: the question map is the reusable
+    artefact of an experiment. Being able to inspect, diff and archive
+    exactly what was asked matters more than the handler's plumbing, and
+    should not require the optional extra to be installed.
+
+    Question ids are field names, which is also how answers are keyed on
+    the way back.
     """
     if not (isinstance(output_schema, type) and issubclass(output_schema, BaseModel)):
         raise TypeError("output_schema must be a Pydantic BaseModel subclass")
@@ -337,66 +319,83 @@ def questions_from_schema(output_schema: type[BaseModel]) -> dict[str, dict[str,
     return questions
 
 
-def _value_from_answer(
-    name: str,
-    answer: Any,
-    annotation: Any,
-    *,
-    noul_threshold: float,
-) -> Any:
-    """Collapse one typed answer to the plain value the schema field wants."""
-    if not isinstance(answer, dict):
-        raise SystemOneError(f"Answer for {name!r} is not an object: {answer!r}")
+def _to_sdk_questions(questions: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """Lift the plain question dicts into the SDK's typed question objects."""
+    built: dict[str, Any] = {}
+    for name, question in questions.items():
+        kind = question["type"]
+        instructions = question["instructions"]
+        if kind == "noul":
+            # NoulCriteria is a TypedDict, so its keys are built explicitly
+            # rather than unpacked — `_build_noul` has already rejected any
+            # key outside {"true", "false"}.
+            raw_criteria = question.get("criteria") or {}
+            criteria: NoulCriteria = {}
+            if "true" in raw_criteria:
+                criteria["true"] = raw_criteria["true"]
+            if "false" in raw_criteria:
+                criteria["false"] = raw_criteria["false"]
+            built[name] = Noul(
+                instructions=instructions,
+                criteria=criteria or None,
+            )
+        elif kind == "choice":
+            built[name] = Choice(instructions=instructions, criteria=question["criteria"])
+        else:
+            built[name] = Score(instructions=instructions, criteria=question["criteria"])
+    return built
 
-    kind = answer.get("type")
-    if kind == "noul":
-        probability = answer.get("noul")
-        if not isinstance(probability, int | float):
-            raise SystemOneError(f"Answer for {name!r} has no numeric `noul`: {answer!r}")
-        return bool(probability >= noul_threshold)
-    if kind == "choice":
-        choice = answer.get("choice")
-        if not isinstance(choice, str):
-            raise SystemOneError(f"Answer for {name!r} has no `choice` string: {answer!r}")
-        return choice
-    if kind == "score":
-        score = answer.get("score")
-        if not isinstance(score, int | float):
-            raise SystemOneError(f"Answer for {name!r} has no numeric `score`: {answer!r}")
+
+def _value_from_answer(name: str, answer: Any, annotation: Any, *, noul_threshold: float) -> Any:
+    """Collapse one typed SDK answer to the plain value the schema wants."""
+    if isinstance(answer, NoulAnswer):
+        return bool(answer.noul >= noul_threshold)
+    if isinstance(answer, ChoiceAnswer):
+        return answer.choice
+    if isinstance(answer, ScoreAnswer):
         # Score is probability-weighted and lands *between* levels, so an
         # int-annotated field has to be rounded rather than truncated.
-        return round(score) if annotation is int else float(score)
-    raise SystemOneError(f"Answer for {name!r} has unknown type {kind!r}")
+        return round(answer.score) if annotation is int else float(answer.score)
+    raise SystemOneError(f"Answer for {name!r} has unexpected type {type(answer).__name__}")
+
+
+def _request_id_or_none(response: Any) -> str | None:
+    """Read the SDK's `request_id`, tolerating its absence.
+
+    It is a `cached_property` that *raises* when the response carried no
+    `x-typesafe-request-id` header, so `getattr(..., None)` does not help:
+    the default only covers a missing attribute, never one whose getter
+    throws. A missing correlation id must not fail an otherwise good call.
+    """
+    try:
+        return response.request_id
+    except Exception:
+        return None
 
 
 class SystemOneHandler:
     """Experimental handler for TypeSafe System One (Jev).
-
-    Transport-injectable so unit tests never touch the network. Retries are
-    the handler's own responsibility (the vendor SDK would do it for us, but
-    we deliberately do not depend on the SDK).
 
     Config rides `profile.model_kwargs` rather than new `Profile` fields —
     the same route `test_langchain_live.py` already uses for `base_url` and
     `api_key`, and the route the loader's env overlay reaches via
     `{APP}_PROFILE_{NAME}_MODEL_KWARGS__API_KEY`:
 
-      - `api_key`        (required; never logged or echoed into `raw`)
-      - `base_url`       (default: the public endpoint)
-      - `timeout`        (seconds, default 30)
-      - `max_retries`    (default 3, on 429/529 only)
-      - `backoff_base`   (seconds, default 0.5; doubles per attempt)
+      - `api_key`        (required; never echoed into `raw`)
+      - `base_url`       (default: the SDK's own)
+      - `timeout`        (seconds)
       - `noul_threshold` (default 0.5)
+      - `retry`          (mapping splatted into the SDK's `RetryPolicy`,
+                          e.g. `{"max_retries": 5, "backoff_max": 10.0}`)
+
+    Anything else is forwarded to the API as `extra_body`, so a new
+    top-level request field does not require a chumak release to reach.
     """
 
-    def __init__(
-        self,
-        transport: Transport | None = None,
-        *,
-        sleep: Any = time.sleep,
-    ) -> None:
-        self._transport = transport or UrllibTransport()
-        self._sleep = sleep
+    def __init__(self, transport: Any = None) -> None:
+        # An `httpx2.BaseTransport`. Present so unit tests can drive a
+        # MockTransport through the SDK's real retry path.
+        self._transport = transport
 
     def execute(
         self,
@@ -404,6 +403,8 @@ class SystemOneHandler:
         output_schema: type[BaseModel] | None,
         profile: Profile,
     ) -> HandlerResult:
+        if not _SDK_AVAILABLE:
+            raise SystemOneError(f"Profile {profile.name!r}: {_INSTALL_HINT}")
         if output_schema is None:
             # Jev answers questions; questions come from the schema. With no
             # schema there is no question to ask, and Jev emits no free text
@@ -422,69 +423,58 @@ class SystemOneHandler:
                 f"the env overlay ({{APP}}_PROFILE_{profile.name.replace('-', '_').upper()}"
                 "_MODEL_KWARGS__API_KEY) rather than committing it to TOML."
             )
-        endpoint = str(options.pop("base_url", DEFAULT_ENDPOINT))
-        timeout = float(options.pop("timeout", _DEFAULT_TIMEOUT))
-        max_retries = int(options.pop("max_retries", _DEFAULT_MAX_RETRIES))
-        backoff_base = float(options.pop("backoff_base", _DEFAULT_BACKOFF_BASE))
+        base_url = options.pop("base_url", None)
+        timeout = options.pop("timeout", None)
         noul_threshold = float(options.pop("noul_threshold", _DEFAULT_NOUL_THRESHOLD))
+        retry_config = options.pop("retry", None)
+        if retry_config is not None and not isinstance(retry_config, dict):
+            raise SystemOneError(
+                f"Profile {profile.name!r}: model_kwargs.retry must be a mapping of "
+                f"RetryPolicy fields, got {type(retry_config).__name__}"
+            )
+        # Defaulting to the SDK's own policy is the point of using it: it
+        # honours Retry-After, jitters its backoff, and retries connection
+        # and timeout errors, none of which a status-code loop of ours did.
+        retry = RetryPolicy(**retry_config) if retry_config else None
 
         questions = questions_from_schema(output_schema)
-        body: dict[str, Any] = {
-            "state": prompt,
-            "model": profile.model,
-            "questions": questions,
-        }
-        # Anything left over is forwarded verbatim, so a new top-level API
-        # field does not require a chumak release to reach.
-        body.update(options)
 
-        payload_bytes = json.dumps(body).encode("utf-8")
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
+        client_kwargs: dict[str, Any] = {"api_key": api_key}
+        if base_url is not None:
+            client_kwargs["base_url"] = str(base_url)
+        if timeout is not None:
+            client_kwargs["timeout"] = float(timeout)
+        if retry is not None:
+            client_kwargs["retry"] = retry
+        if self._transport is not None:
+            client_kwargs["transport"] = self._transport
 
         started = time.monotonic()
-        status, response_bytes, attempts = self._post_with_retry(
-            endpoint,
-            headers=headers,
-            body=payload_bytes,
-            timeout=timeout,
-            max_retries=max_retries,
-            backoff_base=backoff_base,
-        )
+        try:
+            with TypeSafeClient(**client_kwargs) as client:
+                response = client.system_one(
+                    state=prompt,
+                    questions=_to_sdk_questions(questions),
+                    model=profile.model,
+                    extra_body=options or None,
+                )
+        except Exception as exc:
+            # The SDK raises a typed hierarchy under TypeSafeError; wrapping
+            # keeps consumers catching one chumak-shaped error per handler
+            # while the original stays on __cause__.
+            raise SystemOneError(
+                f"System One call failed for profile {profile.name!r}: {type(exc).__name__}: {exc}"
+            ) from exc
         duration_ms = (time.monotonic() - started) * 1000
 
-        if status != 200:
-            raise SystemOneError(
-                f"System One returned HTTP {status} for profile {profile.name!r}: "
-                f"{_describe_error(response_bytes)}"
-            )
-
-        try:
-            response = json.loads(response_bytes)
-        except json.JSONDecodeError as exc:
-            raise SystemOneError(
-                f"System One returned non-JSON: {exc}; "
-                f"body (first 500 bytes): {response_bytes[:500]!r}"
-            ) from exc
-        if not isinstance(response, dict):
-            raise SystemOneError(
-                f"System One returned a non-object body: {type(response).__name__}"
-            )
-
-        answers = response.get("answers")
-        if not isinstance(answers, dict):
-            raise SystemOneError(f"System One response has no `answers` map: {response!r}")
-
-        missing = set(questions) - set(answers)
+        missing = set(questions) - set(response.answers)
         if missing:
             raise SystemOneError(f"System One omitted answers for: {sorted(missing)}")
 
         values = {
             name: _value_from_answer(
                 name,
-                answers[name],
+                response.answers[name],
                 _unwrap_optional(output_schema.model_fields[name].annotation),
                 noul_threshold=noul_threshold,
             )
@@ -498,58 +488,19 @@ class SystemOneHandler:
                 f"System One answers failed schema validation: {exc}; values={values!r}"
             ) from exc
 
-        usage = response.get("usage")
         raw = SystemOneRaw(
-            endpoint=endpoint,
             # The response names the resolved version (e.g. `jev-1.13.0`)
-            # where the request named an alias (`jev-latest`). Prefer it.
-            model=str(response.get("model") or profile.model),
-            # The API key lives in the headers, which are not stored here —
-            # `raw` ends up in provenance records and must stay clean.
-            request=body,
-            response=response,
-            answers=answers,
-            usage=usage if isinstance(usage, dict) else {},
+            # where the request named an alias (`jev-latest`). Prefer it, or
+            # a silent vendor model bump is invisible in the ledger.
+            model=str(response.model or profile.model),
+            # The question map, not the whole request: the API key lives in
+            # client headers and `raw` ends up in provenance records.
+            questions=questions,
+            answers={k: v.model_dump() for k, v in response.answers.items()},
+            usage=response.usage.model_dump() if response.usage else {},
+            request_id=_request_id_or_none(response),
             duration_ms=duration_ms,
-            attempts=attempts,
         )
         # `state` is what actually reached the model, so it is what the meta
         # builder should hash for `prompt_actual_sha256`.
         return HandlerResult(payload=validated, raw=raw, rendered_prompt=prompt)
-
-    def _post_with_retry(
-        self,
-        endpoint: str,
-        *,
-        headers: Mapping[str, str],
-        body: bytes,
-        timeout: float,
-        max_retries: int,
-        backoff_base: float,
-    ) -> tuple[int, bytes, int]:
-        """POST, retrying 429/529 with exponential backoff.
-
-        Returns the last `(status, body, attempts)` even when every attempt
-        was rate-limited — the caller turns a non-200 into the error, so the
-        response body survives to explain itself.
-        """
-        status, response_bytes = 0, b""
-        attempts = 0
-        for attempt in range(max_retries + 1):
-            attempts = attempt + 1
-            status, response_bytes = self._transport.post(
-                endpoint, headers=headers, body=body, timeout=timeout
-            )
-            if status not in RETRY_STATUSES or attempt == max_retries:
-                return status, response_bytes, attempts
-            self._sleep(backoff_base * (2**attempt))
-        return status, response_bytes, attempts
-
-
-def _describe_error(response_bytes: bytes) -> str:
-    """Best-effort rendering of an error body, truncated for log safety."""
-    try:
-        parsed = json.loads(response_bytes)
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        return repr(response_bytes[:300])
-    return json.dumps(parsed)[:300]

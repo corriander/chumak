@@ -23,6 +23,11 @@ import chumak
 from chumak.handlers.systemone import SystemOneRaw
 from chumak.handlers.types import HandlerType
 
+pytest.importorskip(
+    "typesafe_sdk",
+    reason="install with `uv sync --extra typesafe` to run this test",
+)
+
 API_KEY = os.environ.get("CHUMAK_TEST_TYPESAFE_API_KEY")
 
 pytestmark = pytest.mark.skipif(
@@ -85,6 +90,9 @@ def test_systemone_returns_a_validated_payload_with_usage() -> None:
     assert result.meta.cost.tokens_in > 0
     assert result.meta.cost.tokens_out is not None
     assert result.meta.produced_by.profile == "jev"
+    # Cost is priced by the handler's own dated constants.
+    assert result.meta.cost.usd is not None
+    assert result.meta.cost.usd > 0
 
 
 @pytest.mark.integration
@@ -108,3 +116,5 @@ def test_systemone_confidence_and_probabilities_are_available_on_raw() -> None:
     assert raw.confidence("is_urgent") is None
     assert raw.estimated_usd() is not None
     assert raw.duration_ms is not None
+    # The handle for reconciling this call against the vendor usage page.
+    assert raw.request_id is not None

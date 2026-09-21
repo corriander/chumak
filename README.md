@@ -79,8 +79,12 @@ the whole signal.
 
 Untyped calls are rejected: no schema means no questions, and Jev generates no text.
 
-Retries on `429`/`529` with exponential backoff are handled inside the handler; the
-transport is stdlib-only, so this adds no dependency.
+Install the optional extra: `uv sync --extra typesafe` (or `pip install 'chumak[typesafe]'`).
+
+**Retries are the vendor SDK's job, not ours.** Its `RetryPolicy` honours the
+`Retry-After` header, jitters its backoff, and retries connection and timeout errors —
+none of which a hand-rolled status-code loop does, and all of which matter when a
+consumer walks a corpus in a tight loop. Override it per profile via `model_kwargs.retry`.
 
 ```toml
 # ~/.config/<your-app>/chumak/profiles/jev.toml
@@ -91,8 +95,16 @@ model = "jev-latest"
 # api_key MUST come from the env overlay, never from this file:
 #   {APP}_PROFILE_JEV_MODEL_KWARGS__API_KEY=sk-...
 timeout = 30
+
+[model_kwargs.retry]      # splatted into the SDK's RetryPolicy
 max_retries = 3
+backoff_max = 10.0
 ```
+
+`result.meta.cost` carries `tokens_in`, `tokens_out` **and `usd`** — the handler prices
+its own calls from dated constants, so the library never holds a table of every model's
+pricing. `raw.request_id` is the handle for reconciling a call against TypeSafe's own
+usage page.
 
 ## Profiles
 

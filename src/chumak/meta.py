@@ -59,7 +59,7 @@ def _extract_cost(raw: Any) -> Cost:
         )
     if isinstance(raw, UsageSource):
         tokens_in, tokens_out = raw.token_usage()
-        return Cost(tokens_in=tokens_in, tokens_out=tokens_out)
+        return Cost(tokens_in=tokens_in, tokens_out=tokens_out, usd=raw.estimated_usd())
     return Cost()
 
 

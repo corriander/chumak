@@ -58,6 +58,16 @@ class UsageSource(Protocol):
         """Return `(tokens_in, tokens_out)`, either of which may be `None`."""
         ...
 
+    def estimated_usd(self) -> float | None:
+        """Return the call's cost in USD, or `None` if it cannot be priced.
+
+        Pricing is per-vendor and dated, so the *handler* carries its own
+        price constants rather than the library carrying a table of every
+        model it might ever meet. That is what makes populating
+        `Meta.cost.usd` possible without chumak owning vendor pricing.
+        """
+        ...
+
 
 class Handler(Protocol):
     def execute(

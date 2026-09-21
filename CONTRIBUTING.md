@@ -57,16 +57,22 @@ free local stand-in — this hits the hosted endpoint and costs money (fractions
 penny per call, at $0.042/MTok in, output free).
 
 ```bash
+uv sync --extra typesafe
 CHUMAK_TEST_TYPESAFE_API_KEY=sk-... \
   uv run pytest --integration tests/test_systemone_live.py -v
 ```
 
-Optional overrides: `CHUMAK_TEST_TYPESAFE_URL` (default the public endpoint),
+Optional overrides: `CHUMAK_TEST_TYPESAFE_URL` (default the SDK's endpoint),
 `CHUMAK_TEST_TYPESAFE_MODEL` (default `jev-latest`).
 
-The unit suite (`tests/test_systemone_handler.py`) covers every path through a fake
-transport, including retry/backoff on 429/529 — the live test exists only to prove
-the wire format and auth still match the vendor's API.
+The unit suite (`tests/test_systemone_handler.py`) covers every path by driving the
+SDK's real client over an `httpx2.MockTransport`, so retry behaviour under test is the
+vendor's actual `RetryPolicy` rather than a stub of it. The live test exists only to
+prove the wire format and auth still match the vendor's API.
+
+> **Privacy note.** The SDK's docs state that secret headers are redacted from its log
+> output but **request and response bodies are not**. Pin `TYPESAFE_LOG_LEVEL` before
+> sending anything sensitive through it.
 
 #### Why no subprocess live test?
 
