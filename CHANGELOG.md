@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.0](https://github.com/corriander/chumak/compare/v0.2.1...v0.3.0) (2026-09-22)
+
+
+### Features
+
+* **handlers:** experimental System One (Jev) handler ([#45](https://github.com/corriander/chumak/issues/45)) ([2ce3624](https://github.com/corriander/chumak/commit/2ce36242d8740950bff2b34df0e7abac4b47af53))
+
+
+### Bug Fixes
+
+* **deps:** bump langchain-core from 1.5.1 to 1.5.3 ([#40](https://github.com/corriander/chumak/issues/40)) ([182de0a](https://github.com/corriander/chumak/commit/182de0a3e4315e380ff8a3f26eb4445802a31aff))
+* **deps:** bump langchain-openai from 1.4.1 to 1.6.2 ([#42](https://github.com/corriander/chumak/issues/42)) ([3e5efcf](https://github.com/corriander/chumak/commit/3e5efcf986ac9385cd50bba9f9f3f8ae97b6fdc7))
+
 ## [0.2.1](https://github.com/corriander/chumak/compare/v0.2.0...v0.2.1) (2026-07-24)
 
 
