@@ -50,8 +50,10 @@ class UsageSource(Protocol):
     that knows about all of them. Instead a `raw` object opts in by
     implementing this method, and `build_meta` asks rather than inspects.
 
-    LangChain's `AIMessage` predates this and is special-cased in
-    `chumak.meta`; everything added since is expected to implement it.
+    LangChain's `AIMessage` is a vendor type chumak can't extend, so it
+    stays special-cased in `chumak.meta`. A chumak-owned `raw` that knows
+    its usage should implement this; one that can't (a subprocess CLI)
+    simply doesn't, and gets an empty `Cost`.
     """
 
     def token_usage(self) -> tuple[int | None, int | None]:
