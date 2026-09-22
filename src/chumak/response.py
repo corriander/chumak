@@ -33,8 +33,14 @@ class Cost(BaseModel):
     """Token usage and (where computable) USD cost for a single call.
 
     Best-effort: handler types that don't surface usage data leave fields
-    as `None`. `usd` is not computed at the substrate level — that needs
-    per-model pricing the library doesn't carry.
+    as `None`.
+
+    `usd` is populated when the handler can price its own call — handlers
+    carry dated, vendor-specific price constants and report them via
+    `UsageSource.estimated_usd()`, so the library never has to hold a table
+    of every model's pricing. It stays `None` for handlers that can't
+    (a subprocess CLI has no idea what it cost), and it is always an
+    *estimate* against a snapshotted price, never a billing record.
     """
 
     tokens_in: int | None = None

@@ -15,7 +15,7 @@ chat model, a CLI subprocess, …) and returns:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -39,6 +39,36 @@ class HandlerResult(BaseModel):
             "handler-level augmentation. Hashed for provenance."
         ),
     )
+
+
+@runtime_checkable
+class UsageSource(Protocol):
+    """A handler `raw` that can report its own token usage.
+
+    The meta builder needs tokens out of every transport, but it cannot
+    grow an `isinstance` branch per handler without becoming the one place
+    that knows about all of them. Instead a `raw` object opts in by
+    implementing this method, and `build_meta` asks rather than inspects.
+
+    LangChain's `AIMessage` is a vendor type chumak can't extend, so it
+    stays special-cased in `chumak.meta`. A chumak-owned `raw` that knows
+    its usage should implement this; one that can't (a subprocess CLI)
+    simply doesn't, and gets an empty `Cost`.
+    """
+
+    def token_usage(self) -> tuple[int | None, int | None]:
+        """Return `(tokens_in, tokens_out)`, either of which may be `None`."""
+        ...
+
+    def estimated_usd(self) -> float | None:
+        """Return the call's cost in USD, or `None` if it cannot be priced.
+
+        Pricing is per-vendor and dated, so the *handler* carries its own
+        price constants rather than the library carrying a table of every
+        model it might ever meet. That is what makes populating
+        `Meta.cost.usd` possible without chumak owning vendor pricing.
+        """
+        ...
 
 
 class Handler(Protocol):

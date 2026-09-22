@@ -19,6 +19,7 @@ dependencies = [
 [project.optional-dependencies]
 anthropic = ["langchain-anthropic>=1.0"]
 openai = ["langchain-openai>=1.2.2"]
+typesafe = ["typesafe-sdk>=0.7"]
 
 [dependency-groups]
 dev = [
@@ -27,6 +28,9 @@ dev = [
     "ruff>=0.15.14",
     "ty>=0.0.21",
     "langchain-anthropic>=1.0",
+    # The System One handler's unit suite stubs the SDK transport, so the SDK
+    # itself must be importable in dev even though it is an optional extra.
+    "typesafe-sdk>=0.7",
 ]
 
 [build-system]

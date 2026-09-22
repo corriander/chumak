@@ -49,6 +49,31 @@ CHUMAK_TEST_OPENAI_MODEL=qwen2.5-7b-instruct \
 
 The test uses a tiny `ColourTag { colour: str, is_warm: bool }` schema — small enough that any reasonable 7B-class instruct model handles it. If you add coverage for a new handler or option, add a sibling test under the same marker and document the env vars it needs here.
 
+### Integration test — System One handler against TypeSafe (experimental)
+
+Marker-gated *and* key-gated: skipped unless `--integration` is passed **and**
+`CHUMAK_TEST_TYPESAFE_API_KEY` is set. Unlike the LangChain live test there is no
+free local stand-in — this hits the hosted endpoint and costs money (fractions of a
+penny per call, at $0.042/MTok in, output free).
+
+```bash
+uv sync --extra typesafe
+CHUMAK_TEST_TYPESAFE_API_KEY=sk-... \
+  uv run pytest --integration tests/test_systemone_live.py -v
+```
+
+Optional overrides: `CHUMAK_TEST_TYPESAFE_URL` (default the SDK's endpoint),
+`CHUMAK_TEST_TYPESAFE_MODEL` (default `jev-latest`).
+
+The unit suite (`tests/test_systemone_handler.py`) covers every path by driving the
+SDK's real client over an `httpx2.MockTransport`, so retry behaviour under test is the
+vendor's actual `RetryPolicy` rather than a stub of it. The live test exists only to
+prove the wire format and auth still match the vendor's API.
+
+> **Privacy note.** The SDK's docs state that secret headers are redacted from its log
+> output but **request and response bodies are not**. Pin `TYPESAFE_LOG_LEVEL` before
+> sending anything sensitive through it.
+
 #### Why no subprocess live test?
 
 The subprocess handler is harder to gate (each CLI has its own auth / install requirements). Cover it with unit tests against a temporary script (`tests/test_subprocess_handler.py` does this), and rely on downstream consumers for true end-to-end exercise.
