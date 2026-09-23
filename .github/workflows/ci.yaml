@@ -80,10 +80,10 @@ jobs:
       && !contains(needs.*.result, 'failure')
       && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     steps:
+      # Config lives in release-please-config.json (manifest mode): pre-1.0,
+      # a breaking change bumps the minor version rather than cutting 1.0.0.
       - uses: googleapis/release-please-action@v5
         id: release
-        with:
-          release-type: python
 
       - uses: actions/checkout@v7
 
