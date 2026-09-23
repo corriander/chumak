@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
 from chumak.handlers.types import HandlerType, PromptDelivery
 
@@ -22,7 +22,9 @@ from chumak.handlers.types import HandlerType, PromptDelivery
 class Profile(BaseModel):
     """Named inference configuration."""
 
-    model_config = ConfigDict(extra="forbid")
+    # `hide_input_in_errors`: a validation error must not echo the rejected
+    # value — it may be a key the env overlay routed to the wrong field.
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
 
     name: str
     handler: HandlerType
@@ -50,7 +52,20 @@ class Profile(BaseModel):
             "For LangChain profiles, merged into `init_chat_model(...)` and "
             "takes precedence over top-level `temperature` / `max_tokens` on "
             "conflict. For subprocess profiles, must be empty (the command "
-            "string is authoritative)."
+            "string is authoritative). Not treated as secret: credentials "
+            "belong in `api_key`."
+        ),
+    )
+    api_key: SecretStr | None = Field(
+        default=None,
+        description=(
+            "Credential for the underlying SDK. Held as a `SecretStr`, so it "
+            "renders as '**********' wherever the profile is rendered (repr, "
+            "logs, dumps, tracebacks capturing it); handlers unwrap it only "
+            "when building the SDK client. Leave unset to let the SDK read its "
+            "own standard variable (`OPENAI_API_KEY`, `TYPESAFE_API_KEY`, ...). "
+            "Per-profile keys come from the env overlay "
+            "(`{APP}_PROFILE_{NAME}_API_KEY`), not TOML."
         ),
     )
 
@@ -81,7 +96,19 @@ class Profile(BaseModel):
                     f"Profile {self.name!r}: subprocess profiles cannot set "
                     "`model_kwargs` (the command is authoritative)"
                 )
+            if self.api_key is not None:
+                raise ValueError(
+                    f"Profile {self.name!r}: subprocess profiles cannot set "
+                    "`api_key` (the command authenticates itself)"
+                )
         else:
+            if "api_key" in self.model_kwargs:
+                raise ValueError(
+                    f"Profile {self.name!r}: `model_kwargs.api_key` is no longer read. "
+                    "Set the top-level `api_key` field instead (env overlay: "
+                    "`{APP}_PROFILE_{NAME}_API_KEY`), or leave it unset so the SDK "
+                    "reads its standard variable, e.g. `OPENAI_API_KEY`"
+                )
             forbidden = {
                 "command": self.command,
                 "prompt_delivery": self.prompt_delivery,

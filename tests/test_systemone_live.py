@@ -57,7 +57,7 @@ class Triage(BaseModel):
 
 
 def _profile() -> chumak.Profile:
-    model_kwargs: dict[str, object] = {"api_key": API_KEY}
+    model_kwargs: dict[str, object] = {}
     base_url = os.environ.get("CHUMAK_TEST_TYPESAFE_URL")
     if base_url:
         model_kwargs["base_url"] = base_url
@@ -65,6 +65,7 @@ def _profile() -> chumak.Profile:
         name="jev",
         handler=HandlerType.SYSTEMONE,
         model=os.environ.get("CHUMAK_TEST_TYPESAFE_MODEL", "jev-latest"),
+        api_key=API_KEY,
         model_kwargs=model_kwargs,
     )
 

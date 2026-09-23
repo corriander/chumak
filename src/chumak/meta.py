@@ -36,7 +36,6 @@ def build_meta(
             prompt_version=profile.prompt_version,
             prompt_template_sha256=template_sha,
             prompt_actual_sha256=_sha256_or_none(handler_result.rendered_prompt),
-            model_kwargs=dict(profile.model_kwargs),
         ),
         generated_at=datetime.now(UTC),
         cost=_extract_cost(handler_result.raw),

@@ -90,10 +90,10 @@ consumer walks a corpus in a tight loop. Override it per profile via `model_kwar
 # ~/.config/<your-app>/chumak/profiles/jev.toml
 handler = "systemone"
 model = "jev-latest"
+# No key in this file: the SDK reads TYPESAFE_API_KEY, or set a per-profile one
+# via {APP}_PROFILE_JEV_API_KEY. See "API keys" below.
 
 [model_kwargs]
-# api_key MUST come from the env overlay, never from this file:
-#   {APP}_PROFILE_JEV_MODEL_KWARGS__API_KEY=sk-...
 timeout = 30
 
 [model_kwargs.retry]      # splatted into the SDK's RetryPolicy
@@ -131,8 +131,6 @@ max_tokens = 4096
 ```toml
 # claude-account-b.toml
 extends = "claude"
-
-[model_kwargs]
 # api_key sourced from env — see below
 ```
 
@@ -151,13 +149,40 @@ with `__` as the nested-field delimiter (single `_` stays inside field names):
 # top-level field
 export MYAPP_VISION_PROFILE_CLAUDE_MODEL=anthropic:claude-haiku-4-5
 
+# the API key is a top-level field too
+export MYAPP_VISION_PROFILE_CLAUDE_ACCOUNT_B_API_KEY=sk-ant-...
+
 # nested into model_kwargs
-export MYAPP_VISION_PROFILE_CLAUDE_ACCOUNT_B_MODEL_KWARGS__API_KEY=sk-ant-...
+export MYAPP_VISION_PROFILE_CLAUDE_MODEL_KWARGS__MAX_TOKENS=8192
 ```
 
 This means a profile file can be effectively empty on disk (just declaring the
 profile's existence and maybe an `extends`), with all values supplied by the
 environment. You decide which fields are sensitive and never touch disk.
+
+### API keys
+
+A profile's credential is its top-level `api_key` field, held as a pydantic
+`SecretStr`: wherever the profile is rendered (`repr`, logs, dumps, a traceback
+capturing it) the key shows as `**********`. Handlers unwrap it only when they build
+the SDK client, so a failure inside that SDK call can still hold the plain value in
+its own frames.
+
+- **Leave it unset** and the SDK reads its own standard variable
+  (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `TYPESAFE_API_KEY`, …). This is the simplest
+  route, and the one secret managers such as varlock inject into.
+- **Set it** when one provider needs a different key per profile (two accounts, say),
+  via the env overlay rather than TOML.
+- **`model_kwargs.api_key` is rejected.** `model_kwargs` is not treated as secret, so
+  keep credentials out of it, custom auth headers included.
+- **Watch custom endpoints.** An `openai:` profile with its own `base_url` (llama.cpp,
+  LiteLLM, any OpenAI-compatible proxy) and no `api_key` falls back to `OPENAI_API_KEY`,
+  and LangChain sends that key to the custom endpoint. Give such profiles their own key;
+  for a server without auth, a placeholder such as `api_key = "sk-no-auth"` in TOML is
+  fine, since it is not a secret.
+
+Profile validation errors never echo input values, so a key routed to the wrong
+field doesn't end up in the message.
 
 ## Usage
 
@@ -214,6 +239,8 @@ result.meta.derived_from  # [...]
   (tactical/narrator etc. — that's an app concern; just name your profile).
 - **LangChain is a handler, not the spine**: subprocess CLIs are first-class.
 - **Provenance is opt-in**: omit `provenance=` and `meta.artefact_type` is `None`.
+- **Meta is safe to persist**: `meta.produced_by` records the profile name, model and
+  prompt hashes, never `model_kwargs` or the key.
 - **The lib never reads env directly** for its own settings. The env overlay
   for profiles is a deliberate, scoped exception, gated on the prefix the
   consumer passes in.

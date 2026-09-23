@@ -76,7 +76,11 @@ class Provenance(BaseModel):
 
 
 class ProducedBy(BaseModel):
-    """Identity of the inference that produced an artefact."""
+    """Identity of the inference that produced an artefact.
+
+    Deliberately records no `model_kwargs`: provenance gets persisted, and
+    free-form kwargs are the one place a credential could ride along.
+    """
 
     profile: str
     model: str = Field(
@@ -96,7 +100,6 @@ class ProducedBy(BaseModel):
             "Differs from `prompt_template_sha256` by exactly the augmentation."
         ),
     )
-    model_kwargs: dict[str, Any] = Field(default_factory=dict)
 
 
 class Meta(BaseModel):

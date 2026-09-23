@@ -49,14 +49,45 @@ class _FakeModel:
         return self._structured
 
 
-def _profile() -> Profile:
-    return Profile(
-        name="local-openai",
-        handler=HandlerType.LANGCHAIN,
-        model="openai:mistral-7b-instruct-v0.3",
-        temperature=0.0,
-        model_kwargs={"base_url": "http://edge/v1", "api_key": "sk-local-unused"},
-    )
+def _profile(**overrides: object) -> Profile:
+    fields: dict[str, object] = {
+        "name": "local-openai",
+        "handler": HandlerType.LANGCHAIN,
+        "model": "openai:mistral-7b-instruct-v0.3",
+        "temperature": 0.0,
+        "api_key": "sk-local-unused",
+        "model_kwargs": {"base_url": "http://edge/v1"},
+    }
+    fields.update(overrides)
+    return Profile.model_validate(fields)
+
+
+def test_api_key_reaches_init_chat_model_unwrapped(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, object] = {}
+
+    def fake_init(model: str, **kwargs: object) -> _FakeModel:
+        seen.update(kwargs)
+        return _FakeModel(text="ok")
+
+    monkeypatch.setattr("chumak.handlers.langchain.init_chat_model", fake_init)
+    LangChainHandler().execute(prompt="ping", output_schema=None, profile=_profile())
+
+    assert seen["api_key"] == "sk-local-unused"
+    assert seen["base_url"] == "http://edge/v1"
+
+
+def test_unset_api_key_is_left_to_the_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No `api_key` kwarg at all, so the provider class reads its own env var."""
+    seen: dict[str, object] = {}
+
+    def fake_init(model: str, **kwargs: object) -> _FakeModel:
+        seen.update(kwargs)
+        return _FakeModel(text="ok")
+
+    monkeypatch.setattr("chumak.handlers.langchain.init_chat_model", fake_init)
+    LangChainHandler().execute(prompt="ping", output_schema=None, profile=_profile(api_key=None))
+
+    assert "api_key" not in seen
 
 
 def test_untyped_returns_plain_text(monkeypatch: pytest.MonkeyPatch) -> None:
