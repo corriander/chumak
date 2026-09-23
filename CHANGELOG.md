@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.4.0](https://github.com/corriander/chumak/compare/v0.3.0...v0.4.0) (2026-09-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* **profile:** `model_kwargs.api_key` is rejected with an error naming the new location; set the top-level `api_key` field or leave it unset so the SDK reads its standard variable. `ProducedBy.model_kwargs` is removed.
+
+### Features
+
+* **profile:** hold the API key in a SecretStr field ([d466564](https://github.com/corriander/chumak/commit/d4665648dd92222c2dc1c3c26024fbf07e1c71e9))
+
 ## [0.3.0](https://github.com/corriander/chumak/compare/v0.2.1...v0.3.0) (2026-09-22)
 
 
