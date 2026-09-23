@@ -101,10 +101,9 @@ class Recorder:
         return json.loads(self.requests[index].content)
 
 
-def make_profile(**model_kwargs: Any) -> Profile:
+def make_profile(*, api_key: str | None = "sk-test", **model_kwargs: Any) -> Profile:
     # Fast backoff so retry tests don't sleep for real.
     kwargs: dict[str, Any] = {
-        "api_key": "sk-test",
         "retry": {"backoff_initial": 0.001, "backoff_max": 0.002, "backoff_jitter": 0.0},
     }
     kwargs.update(model_kwargs)
@@ -112,6 +111,7 @@ def make_profile(**model_kwargs: Any) -> Profile:
         name="jev",
         handler=HandlerType.SYSTEMONE,
         model="jev-latest",
+        api_key=api_key,
         model_kwargs=kwargs,
     )
 
@@ -302,10 +302,23 @@ def test_untyped_call_is_rejected() -> None:
         SystemOneHandler(Recorder([]).transport).execute("s", None, make_profile())
 
 
-def test_missing_api_key_is_rejected_with_the_env_path() -> None:
-    profile = Profile(name="jev", handler=HandlerType.SYSTEMONE, model="jev-latest")
-    with pytest.raises(SystemOneError, match="MODEL_KWARGS__API_KEY"):
-        SystemOneHandler(Recorder([]).transport).execute("s", Verdict, profile)
+def test_profile_api_key_is_sent_as_the_bearer_token() -> None:
+    rec = Recorder([(200, ok_response())])
+    SystemOneHandler(rec.transport).execute("s", Verdict, make_profile())
+    assert rec.requests[0].headers["authorization"] == "Bearer sk-test"
+
+
+def test_unset_api_key_falls_back_to_the_sdk_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TYPESAFE_API_KEY", "sk-from-sdk-env")
+    rec = Recorder([(200, ok_response())])
+    SystemOneHandler(rec.transport).execute("s", Verdict, make_profile(api_key=None))
+    assert rec.requests[0].headers["authorization"] == "Bearer sk-from-sdk-env"
+
+
+def test_no_key_anywhere_names_the_sdk_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+    with pytest.raises(SystemOneError, match="TYPESAFE_API_KEY"):
+        SystemOneHandler(Recorder([]).transport).execute("s", Verdict, make_profile(api_key=None))
 
 
 def test_non_mapping_retry_config_is_rejected() -> None:

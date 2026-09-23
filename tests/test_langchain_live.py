@@ -50,16 +50,14 @@ def _build_profile() -> chumak.Profile:
     model = os.environ.get("CHUMAK_TEST_OPENAI_MODEL", "gpt-3.5-turbo")
     api_key = os.environ.get("CHUMAK_TEST_OPENAI_API_KEY", "sk-no-auth")
 
-    model_kwargs: dict[str, Any] = {
-        "base_url": url,
-        "api_key": api_key,
-    }
+    model_kwargs: dict[str, Any] = {"base_url": url}
 
     return chumak.Profile(
         name="local-openai",
         handler=HandlerType.LANGCHAIN,
         model=f"openai:{model}",
         temperature=0.0,
+        api_key=api_key,
         model_kwargs=model_kwargs,
     )
 

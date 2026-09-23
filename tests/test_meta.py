@@ -55,6 +55,24 @@ def test_prompt_actual_sha256_hashes_rendered_prompt() -> None:
     assert meta.produced_by.prompt_actual_sha256 == expected
 
 
+def test_provenance_carries_neither_model_kwargs_nor_the_key() -> None:
+    """`meta` is what consumers persist, so nothing credential-shaped rides on it."""
+    profile = Profile(
+        name="local",
+        handler=HandlerType.LANGCHAIN,
+        model="openai:qwen",
+        api_key="sk-secret-value",
+        model_kwargs={"default_headers": {"Authorization": "Bearer sk-header-secret"}},
+    )
+    handler_result = HandlerResult(payload=None, raw=None, rendered_prompt="hi")
+    meta = build_meta(profile=profile, handler_result=handler_result)
+
+    assert "model_kwargs" not in type(meta.produced_by).model_fields
+    dumped = meta.model_dump_json()
+    assert "sk-secret-value" not in dumped
+    assert "sk-header-secret" not in dumped
+
+
 def test_cost_extracted_from_aimessage_usage_metadata() -> None:
     raw = AIMessage(
         content="...",

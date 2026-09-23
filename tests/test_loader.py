@@ -10,6 +10,7 @@ from __future__ import annotations
 import textwrap
 
 import pytest
+from pydantic import ValidationError
 
 from chumak.handlers.types import HandlerType, PromptDelivery
 from chumak.loader import ProfileCycleError, ProfileNotFoundError
@@ -94,13 +95,32 @@ def test_env_overlay_into_nested_model_kwargs(
     write_profile("claude", claude_base_body)
     loader = make_loader(
         env={
-            "TESTAPP_PROFILE_CLAUDE_MODEL_KWARGS__API_KEY": "sk-from-env",
+            "TESTAPP_PROFILE_CLAUDE_MODEL_KWARGS__BASE_URL": "http://edge/v1",
             "TESTAPP_PROFILE_CLAUDE_MODEL_KWARGS__MAX_TOKENS": "8192",
         }
     )
     profile = loader.load("claude")
-    assert profile.model_kwargs["api_key"] == "sk-from-env"
+    assert profile.model_kwargs["base_url"] == "http://edge/v1"
     assert profile.model_kwargs["max_tokens"] == 8192
+
+
+def test_env_overlay_sets_the_api_key(write_profile, make_loader, claude_base_body) -> None:
+    write_profile("claude", claude_base_body)
+    loader = make_loader(env={"TESTAPP_PROFILE_CLAUDE_API_KEY": "sk-from-env"})
+    profile = loader.load("claude")
+    assert profile.api_key is not None
+    assert profile.api_key.get_secret_value() == "sk-from-env"
+    assert "sk-from-env" not in repr(profile)
+
+
+def test_legacy_nested_api_key_env_var_fails_without_echoing_it(
+    write_profile, make_loader, claude_base_body
+) -> None:
+    write_profile("claude", claude_base_body)
+    loader = make_loader(env={"TESTAPP_PROFILE_CLAUDE_MODEL_KWARGS__API_KEY": "sk-legacy"})
+    with pytest.raises(ValidationError, match="no longer read") as excinfo:
+        loader.load("claude")
+    assert "sk-legacy" not in str(excinfo.value)
 
 
 def test_env_overlay_into_hyphenated_profile_name(write_profile, make_loader) -> None:
@@ -120,11 +140,12 @@ def test_env_overlay_into_hyphenated_profile_name(write_profile, make_loader) ->
     )
     loader = make_loader(
         env={
-            "TESTAPP_PROFILE_CLAUDE_ACCOUNT_B_MODEL_KWARGS__API_KEY": "sk-acct-b",
+            "TESTAPP_PROFILE_CLAUDE_ACCOUNT_B_API_KEY": "sk-acct-b",
         }
     )
     profile = loader.load("claude-account-b")
-    assert profile.model_kwargs == {"api_key": "sk-acct-b"}
+    assert profile.api_key is not None
+    assert profile.api_key.get_secret_value() == "sk-acct-b"
 
 
 def test_empty_file_can_be_fully_env_driven(write_profile, make_loader) -> None:
@@ -136,12 +157,13 @@ def test_empty_file_can_be_fully_env_driven(write_profile, make_loader) -> None:
         env={
             "TESTAPP_PROFILE_PHANTOM_HANDLER": "langchain",
             "TESTAPP_PROFILE_PHANTOM_MODEL": "anthropic:claude-opus-4-7",
-            "TESTAPP_PROFILE_PHANTOM_MODEL_KWARGS__API_KEY": "sk-from-env",
+            "TESTAPP_PROFILE_PHANTOM_API_KEY": "sk-from-env",
         }
     )
     profile = loader.load("phantom")
     assert profile.handler is HandlerType.LANGCHAIN
-    assert profile.model_kwargs == {"api_key": "sk-from-env"}
+    assert profile.api_key is not None
+    assert profile.api_key.get_secret_value() == "sk-from-env"
 
 
 def test_env_overlay_disabled_when_prefix_empty(

@@ -42,6 +42,10 @@ class LangChainHandler:
             kwargs["temperature"] = profile.temperature
         if profile.max_tokens is not None:
             kwargs["max_tokens"] = profile.max_tokens
+        # Unwrapped only here, at the SDK boundary. Unset: the provider class
+        # reads its own variable (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, ...).
+        if profile.api_key is not None:
+            kwargs["api_key"] = profile.api_key.get_secret_value()
         kwargs.update(profile.model_kwargs)
 
         model = init_chat_model(profile.model, **kwargs)

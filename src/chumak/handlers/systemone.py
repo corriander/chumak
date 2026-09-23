@@ -376,12 +376,12 @@ def _request_id_or_none(response: Any) -> str | None:
 class SystemOneHandler:
     """Experimental handler for TypeSafe System One (Jev).
 
-    Config rides `profile.model_kwargs` rather than new `Profile` fields —
-    the same route `test_langchain_live.py` already uses for `base_url` and
-    `api_key`, and the route the loader's env overlay reaches via
-    `{APP}_PROFILE_{NAME}_MODEL_KWARGS__API_KEY`:
+    The key is `profile.api_key` (env overlay `{APP}_PROFILE_{NAME}_API_KEY`);
+    left unset, the SDK reads `TYPESAFE_API_KEY` itself. It is never echoed
+    into `raw`. Everything else rides `profile.model_kwargs` rather than new
+    `Profile` fields — the same route `test_langchain_live.py` uses for
+    `base_url`:
 
-      - `api_key`        (required; never echoed into `raw`)
       - `base_url`       (default: the SDK's own)
       - `timeout`        (seconds)
       - `noul_threshold` (default 0.5)
@@ -416,13 +416,6 @@ class SystemOneHandler:
             )
 
         options = dict(profile.model_kwargs)
-        api_key = options.pop("api_key", None)
-        if not api_key:
-            raise SystemOneError(
-                f"Profile {profile.name!r}: model_kwargs.api_key is required. Supply it via "
-                f"the env overlay ({{APP}}_PROFILE_{profile.name.replace('-', '_').upper()}"
-                "_MODEL_KWARGS__API_KEY) rather than committing it to TOML."
-            )
         base_url = options.pop("base_url", None)
         timeout = options.pop("timeout", None)
         noul_threshold = float(options.pop("noul_threshold", _DEFAULT_NOUL_THRESHOLD))
@@ -439,7 +432,9 @@ class SystemOneHandler:
 
         questions = questions_from_schema(output_schema)
 
-        client_kwargs: dict[str, Any] = {"api_key": api_key}
+        client_kwargs: dict[str, Any] = {}
+        if profile.api_key is not None:
+            client_kwargs["api_key"] = profile.api_key.get_secret_value()
         if base_url is not None:
             client_kwargs["base_url"] = str(base_url)
         if timeout is not None:
