@@ -8,12 +8,18 @@ exercise each layer independently and together.
 from __future__ import annotations
 
 import textwrap
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
 from chumak.handlers.types import HandlerType, PromptDelivery
-from chumak.loader import ProfileCycleError, ProfileNotFoundError
+from chumak.loader import (
+    ProfileCycleError,
+    ProfileLoader,
+    ProfileNotFoundError,
+    shared_profiles_dir,
+)
 
 
 @pytest.fixture
@@ -240,3 +246,46 @@ def test_load_all(write_profile, make_loader, claude_base_body) -> None:
     profiles = loader.load_all()
     assert set(profiles) == {"claude", "claude-creative"}
     assert profiles["claude-creative"].temperature == 0.7
+
+
+# --- shared_profiles_dir ----------------------------------------------------
+
+
+def test_shared_profiles_dir_follows_xdg_config_home(tmp_path: Path) -> None:
+    env = {"XDG_CONFIG_HOME": str(tmp_path)}
+    assert shared_profiles_dir(env) == tmp_path / "chumak" / "profiles"
+
+
+@pytest.mark.parametrize("xdg", [None, "", "relative/config"])
+def test_shared_profiles_dir_falls_back_to_home_config(xdg: str | None) -> None:
+    """Unset, empty and relative values all fall back; the XDG spec says to
+    ignore a relative `XDG_CONFIG_HOME`."""
+    env = {} if xdg is None else {"XDG_CONFIG_HOME": xdg}
+    assert shared_profiles_dir(env) == Path.home() / ".config" / "chumak" / "profiles"
+
+
+def test_app_dir_shadows_shared_and_shared_fills_gaps(tmp_path: Path) -> None:
+    """The documented opt-in: app dir first, shared dir second."""
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+    shared = shared_profiles_dir({"XDG_CONFIG_HOME": str(tmp_path / "xdg")})
+    shared.mkdir(parents=True)
+    (shared / "jev.toml").write_text('handler = "systemone"\nmodel = "jev-latest"\n')
+    (shared / "claude.toml").write_text('handler = "langchain"\nmodel = "anthropic:shared"\n')
+    (app_dir / "claude.toml").write_text('handler = "langchain"\nmodel = "anthropic:app"\n')
+
+    loader = ProfileLoader(search_paths=[app_dir, shared], env_prefix="")
+
+    assert loader.load("jev").model == "jev-latest"
+    assert loader.load("claude").model == "anthropic:app"
+
+
+def test_missing_shared_dir_is_harmless(write_profile, profile_dir, claude_base_body) -> None:
+    write_profile("claude", claude_base_body)
+    missing = shared_profiles_dir({"XDG_CONFIG_HOME": str(profile_dir / "nowhere")})
+
+    loader = ProfileLoader(search_paths=[profile_dir, missing], env_prefix="")
+
+    assert loader.names() == ["claude"]
+    with pytest.raises(ProfileNotFoundError):
+        loader.load("jev")

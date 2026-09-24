@@ -14,6 +14,7 @@ from chumak.loader import (
     ProfileLoader,
     ProfileLoaderError,
     ProfileNotFoundError,
+    shared_profiles_dir,
 )
 from chumak.profile import Profile
 from chumak.response import (
@@ -45,4 +46,5 @@ __all__ = [
     "PromptDelivery",
     "Provenance",
     "infer",
+    "shared_profiles_dir",
 ]

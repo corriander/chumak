@@ -114,6 +114,30 @@ Profiles are user-authored. chumak ships at most one generic example
 Profiles live in consumer app directory, e.g. `~/.config/<your-app>/chumak/profiles/`.
 chumak does not impose a config dir; the app passes `search_paths` to `ProfileLoader`.
 
+### Shared profiles
+
+To define a profile once and use it from several apps, put it in the shared folder,
+`$XDG_CONFIG_HOME/chumak/profiles/` (by default `~/.config/chumak/profiles/`). Apps then
+ask for it by name (`loader.load("jev")`), and which model that name means is decided
+in one place.
+
+chumak never searches the shared folder on its own. An app opts in by listing it after
+its own directory:
+
+```python
+from chumak import ProfileLoader, shared_profiles_dir
+
+loader = ProfileLoader(
+    search_paths=[app_profiles_dir, shared_profiles_dir()],
+    env_prefix="MYAPP",
+)
+```
+
+The first match wins, so a same-named file in the app's directory overrides the shared
+one. The env overlay still uses the app's own prefix, so keys stay per app and the
+shared file never needs to hold one. `extends` resolves through the same search paths,
+so an app profile can extend a shared one under a different name.
+
 ### File shape
 
 ```toml
