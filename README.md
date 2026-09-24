@@ -181,6 +181,24 @@ its own frames.
   for a server without auth, a placeholder such as `api_key = "sk-no-auth"` in TOML is
   fine, since it is not a secret.
 
+When you build a profile in code, pass a `SecretStr`. Pydantic accepts a plain string
+at runtime, but some type checkers hold the argument to the declared type,
+`SecretStr | None`, and reject it:
+
+```python
+from pydantic import SecretStr
+
+from chumak import HandlerType, Profile
+
+profile = Profile(
+    name="local-edge",
+    handler=HandlerType.LANGCHAIN,
+    model="openai:mistral-7b",
+    api_key=SecretStr("sk-no-auth"),  # placeholder for an unauthenticated server
+    model_kwargs={"base_url": "http://localhost:8080/v1"},
+)
+```
+
 Profile validation errors never echo input values, so a key routed to the wrong
 field doesn't end up in the message.
 
