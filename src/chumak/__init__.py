@@ -11,6 +11,7 @@ built-in prompts, no role names, no per-domain artefact types. Consumers
 build those on top.
 """
 
+from chumak.attachments import Attachment, AttachmentDigest
 from chumak.errors import ProfileCapabilityError
 from chumak.handlers import HANDLER_REGISTRY, Handler, HandlerType, PromptDelivery
 from chumak.handlers.langchain import resolve_model
@@ -36,6 +37,8 @@ from chumak.surface import infer
 __all__ = [
     "HANDLER_REGISTRY",
     "ArtefactRef",
+    "Attachment",
+    "AttachmentDigest",
     "Citation",
     "Cost",
     "Handler",

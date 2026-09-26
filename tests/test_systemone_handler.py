@@ -17,6 +17,8 @@ import pytest
 from pydantic import BaseModel, Field
 
 import chumak
+from chumak.attachments import Attachment
+from chumak.errors import ProfileCapabilityError
 from chumak.handlers.systemone import (
     INPUT_USD_PER_MTOK,
     SystemOneError,
@@ -455,3 +457,13 @@ def test_duration_is_recorded_for_the_ledger() -> None:
     )
     assert result.raw.duration_ms is not None
     assert result.raw.duration_ms >= 0
+
+
+def test_attachments_are_rejected_before_any_request(red_png) -> None:
+    """Jev takes a text state only: an image must refuse loudly, never be dropped."""
+    recorder = Recorder([(200, ok_response())])
+    with pytest.raises(ProfileCapabilityError, match="does not accept attachments"):
+        SystemOneHandler(recorder.transport).execute(
+            "drawer text", Verdict, make_profile(), attachments=[Attachment(path=red_png)]
+        )
+    assert recorder.requests == []

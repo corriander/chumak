@@ -16,6 +16,9 @@ Run with:
     CHUMAK_TEST_OPENAI_MODEL=qwen2.5-7b-instruct \\
         uv run pytest --integration tests/test_langchain_live.py -v
 
+The attachment test needs a vision-capable model. It uses
+`CHUMAK_TEST_OPENAI_VISION_MODEL` when set, else falls back to the model above.
+
 The test installs `langchain-openai` on demand via the `openai` extra:
 
     uv sync --extra openai
@@ -24,6 +27,7 @@ The test installs `langchain-openai` on demand via the `openai` extra:
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -45,9 +49,11 @@ class ColourTag(BaseModel):
     is_warm: bool
 
 
-def _build_profile() -> chumak.Profile:
+def _build_profile(*, vision: bool = False) -> chumak.Profile:
     url = os.environ.get("CHUMAK_TEST_OPENAI_URL", "http://localhost:8080/v1")
     model = os.environ.get("CHUMAK_TEST_OPENAI_MODEL", "gpt-3.5-turbo")
+    if vision:
+        model = os.environ.get("CHUMAK_TEST_OPENAI_VISION_MODEL", model)
     api_key = os.environ.get("CHUMAK_TEST_OPENAI_API_KEY", "sk-no-auth")
 
     model_kwargs: dict[str, Any] = {"base_url": url}
@@ -110,3 +116,35 @@ def test_langchain_handler_untyped_plaintext() -> None:
     assert result.payload.strip() != ""
     assert result.meta.produced_by.profile == "local-openai"
     assert result.meta.generated_at is not None
+
+
+@pytest.mark.integration
+def test_langchain_handler_with_image_attachment(red_png: Path) -> None:
+    """End-to-end multimodal: a solid-red PNG attached to a typed call.
+
+    Requires a vision-capable model at the endpoint (see
+    `CHUMAK_TEST_OPENAI_VISION_MODEL`). Proves the standard image content
+    block survives the provider translation and that the attachment digest
+    is stamped into meta.
+    """
+    profile = _build_profile(vision=True)
+    attachment = chumak.Attachment(path=red_png)
+
+    result = chumak.infer(
+        prompt=(
+            "The attached image is a single flat colour. Set `colour` to its name "
+            "(lowercase, one word) and `is_warm` to true for warm tones, false for cool."
+        ),
+        attachments=[attachment],
+        output_schema=ColourTag,
+        profile=profile,
+    )
+
+    payload = result.payload
+    assert isinstance(payload, ColourTag), f"got {type(payload).__name__}"
+    assert payload.colour.strip().lower() == "red"
+    assert payload.is_warm is True
+
+    assert [d.model_dump() for d in result.meta.produced_by.attachments] == [
+        attachment.digest().model_dump()
+    ]

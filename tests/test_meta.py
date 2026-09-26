@@ -10,6 +10,7 @@ import hashlib
 
 from langchain_core.messages import AIMessage
 
+from chumak.attachments import Attachment, AttachmentDigest
 from chumak.handlers.base import HandlerResult
 from chumak.handlers.types import HandlerType
 from chumak.meta import build_meta
@@ -120,3 +121,38 @@ def test_consumer_stamped_meta_matches_infer(stub_handler) -> None:
 
     exclude = {"generated_at"}
     assert via_consumer.model_dump(exclude=exclude) == via_infer.model_dump(exclude=exclude)
+
+
+def test_consumer_stamped_meta_matches_infer_with_attachments(stub_handler, red_png) -> None:
+    """The round-trip holds with an image too: `Attachment.digest()` is how a
+    consumer records what it sent, and it matches what the handler reports."""
+    profile = _profile()
+    prompt = "what colour is this?"
+    attachment = Attachment(path=red_png)
+    raw = AIMessage(content="red")
+
+    stub_handler(
+        HandlerResult(
+            payload="red", raw=raw, rendered_prompt=prompt, attachments=[attachment.digest()]
+        )
+    )
+    via_infer = infer(prompt=prompt, profile=profile, attachments=[attachment]).meta
+
+    via_consumer = build_meta(
+        raw, profile=profile, prompt=prompt, attachments=[attachment.digest()]
+    )
+
+    exclude = {"generated_at"}
+    assert via_consumer.model_dump(exclude=exclude) == via_infer.model_dump(exclude=exclude)
+    assert len(via_consumer.produced_by.attachments) == 1
+
+
+def test_attachment_digests_pass_through_to_produced_by() -> None:
+    digests = [AttachmentDigest(sha256="00" * 32, mime="image/png")]
+    meta = build_meta(None, profile=_profile(), prompt="hi", attachments=digests)
+    assert meta.produced_by.attachments == digests
+
+
+def test_no_attachments_yields_empty_list() -> None:
+    meta = build_meta(None, profile=_profile(), prompt="hi")
+    assert meta.produced_by.attachments == []

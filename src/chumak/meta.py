@@ -13,11 +13,13 @@ stamped on the result — chumak records the call; it never runs the loop.
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 
 from langchain_core.messages import AIMessage
 
+from chumak.attachments import AttachmentDigest
 from chumak.handlers.base import UsageSource
 from chumak.profile import Profile
 from chumak.response import Citation, Cost, Meta, ProducedBy, Provenance
@@ -29,6 +31,7 @@ def build_meta(
     profile: Profile,
     prompt: str | None,
     provenance: Provenance | None = None,
+    attachments: Sequence[AttachmentDigest] = (),
 ) -> Meta:
     """Stamp the `Meta` / `ProducedBy` / `Cost` / `Citation` envelope for one call.
 
@@ -42,6 +45,8 @@ def build_meta(
             `produced_by.prompt_actual_sha256`; never stored verbatim.
             `None` means the sent text is unknown, and records no hash.
         provenance: Optional artefact identifiers and upstream references.
+        attachments: Digests of the attachments sent with `prompt`, in order
+            (`Attachment.digest()` for a call made outside `infer()`).
     """
     template_sha = provenance.prompt_template_sha256 if provenance else None
     return Meta(
@@ -54,6 +59,7 @@ def build_meta(
             prompt_version=profile.prompt_version,
             prompt_template_sha256=template_sha,
             prompt_actual_sha256=_sha256_or_none(prompt),
+            attachments=list(attachments),
         ),
         generated_at=datetime.now(UTC),
         cost=_extract_cost(raw),

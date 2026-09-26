@@ -49,6 +49,8 @@ CHUMAK_TEST_OPENAI_MODEL=qwen2.5-7b-instruct \
 
 The test uses a tiny `ColourTag { colour: str, is_warm: bool }` schema — small enough that any reasonable 7B-class instruct model handles it. If you add coverage for a new handler or option, add a sibling test under the same marker and document the env vars it needs here.
 
+The attachment test (`test_langchain_handler_with_image_attachment`) sends a generated solid-red PNG and needs a **vision-capable** model. Point `CHUMAK_TEST_OPENAI_VISION_MODEL` at one (e.g. a `qwen2.5-vl` / `llava` served by llama.cpp or vLLM); it falls back to `CHUMAK_TEST_OPENAI_MODEL` when unset. The PNG comes from the `red_png` fixture (`solid_png` in `tests/conftest.py`) — no imaging library needed.
+
 ### Integration test — System One handler against TypeSafe (experimental)
 
 Marker-gated *and* key-gated: skipped unless `--integration` is passed **and**
@@ -92,7 +94,7 @@ All three must pass clean. CI will run the same.
 
 ## Adding a handler
 
-1. Module under `src/chumak/handlers/<name>.py` exporting a class with `execute(prompt, output_schema, profile) -> HandlerResult`.
+1. Module under `src/chumak/handlers/<name>.py` exporting a class with `execute(prompt, output_schema, profile, attachments=()) -> HandlerResult`. `attachments` is optional: `infer()` passes it only when the call has some, so a text-only handler may leave it out (a call with attachments then fails with `TypeError`). A handler that takes it but cannot send images must raise `ProfileCapabilityError` for a non-empty value, never drop them.
 2. Add the discriminator to `HandlerType` in `src/chumak/handlers/types.py`.
 3. Register the class in `HANDLER_REGISTRY` (`src/chumak/handlers/__init__.py`).
 4. If the handler needs new profile fields, add them to `Profile` with the validator enforcing mutually-exclusive field sets per handler.

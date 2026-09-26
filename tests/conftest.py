@@ -12,13 +12,16 @@ house style. Two themes:
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Mapping
+import struct
+import zlib
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
 import pytest
 from pydantic import BaseModel
 
+from chumak.attachments import Attachment
 from chumak.handlers import HANDLER_REGISTRY
 from chumak.handlers.base import HandlerResult
 from chumak.handlers.types import HandlerType
@@ -82,6 +85,7 @@ class _FakeHandler:
         prompt: str,
         output_schema: type[BaseModel] | None,
         profile: Profile,
+        attachments: Sequence[Attachment] = (),
     ) -> HandlerResult:
         assert _FakeHandler._result is not None, (
             "stub_handler fixture must be set up before execute()"
@@ -114,6 +118,35 @@ class SampleOutput(BaseModel):
 
     title: str
     bounty: int
+
+
+def solid_png(width: int, height: int, rgb: tuple[int, int, int]) -> bytes:
+    """A real, minimal PNG of one flat colour — no imaging library needed.
+
+    Valid enough for any decoder (and any vision model): signature, IHDR,
+    one zlib-compressed IDAT of filter-0 scanlines, IEND.
+    """
+
+    def chunk(tag: bytes, data: bytes) -> bytes:
+        body = tag + data
+        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body))
+
+    scanlines = b"".join(b"\x00" + bytes(rgb) * width for _ in range(height))
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)  # 8-bit RGB
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", ihdr)
+        + chunk(b"IDAT", zlib.compress(scanlines))
+        + chunk(b"IEND", b"")
+    )
+
+
+@pytest.fixture
+def red_png(tmp_path: Path) -> Path:
+    """A 16x16 solid-red PNG on disk."""
+    path = tmp_path / "red.png"
+    path.write_bytes(solid_png(16, 16, (255, 0, 0)))
+    return path
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
