@@ -16,6 +16,9 @@ chat model, a CLI subprocess, …) and returns:
 
 Attachment support is a per-handler capability. A handler that cannot carry
 them must reject a non-empty `attachments` loudly rather than drop them.
+`infer()` passes the `attachments` keyword only when there are some, so a
+handler that omits the parameter entirely stays valid for text-only calls,
+and a call with attachments fails at dispatch with a `TypeError`.
 """
 
 from __future__ import annotations

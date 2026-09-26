@@ -49,11 +49,15 @@ def infer(
     """
     handler_cls = HANDLER_REGISTRY[profile.handler]
     handler = handler_cls()
+    # Text-only calls omit the keyword, so a handler written before
+    # attachments existed — `execute(prompt, output_schema, profile)` — still
+    # works. Non-empty attachments to such a handler fail loudly at the call.
+    extra = {"attachments": attachments} if attachments else {}
     handler_result = handler.execute(
         prompt=prompt,
         output_schema=output_schema,
         profile=profile,
-        attachments=attachments,
+        **extra,
     )
     # No rendered prompt means the sent text is unknown — a handler may have
     # augmented it — so it is not assumed to be the caller's text.

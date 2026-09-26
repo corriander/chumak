@@ -6,7 +6,13 @@ for a deterministic fake, so the surface tests stay hermetic.
 
 from __future__ import annotations
 
-from chumak.attachments import AttachmentDigest
+from collections.abc import Iterator
+
+import pytest
+from pydantic import BaseModel
+
+from chumak.attachments import Attachment, AttachmentDigest
+from chumak.handlers import HANDLER_REGISTRY
 from chumak.handlers.base import HandlerResult
 from chumak.handlers.types import HandlerType
 from chumak.profile import Profile
@@ -90,3 +96,38 @@ def test_infer_stamps_handler_attachment_digests_into_meta(stub_handler) -> None
     result = infer(prompt="what", profile=_profile())
 
     assert result.meta.produced_by.attachments == [digest]
+
+
+class _TextOnlyHandler:
+    """A handler written before attachments existed: no `attachments` keyword."""
+
+    def execute(
+        self,
+        prompt: str,
+        output_schema: type[BaseModel] | None,
+        profile: Profile,
+    ) -> HandlerResult:
+        return HandlerResult(payload="pong", rendered_prompt=prompt)
+
+
+@pytest.fixture
+def text_only_handler() -> Iterator[None]:
+    original = HANDLER_REGISTRY[HandlerType.LANGCHAIN]
+    # Deliberately off-protocol: the point is that infer() still accepts it.
+    HANDLER_REGISTRY[HandlerType.LANGCHAIN] = _TextOnlyHandler  # ty: ignore[invalid-assignment]
+    try:
+        yield
+    finally:
+        HANDLER_REGISTRY[HandlerType.LANGCHAIN] = original
+
+
+def test_text_only_call_still_dispatches_to_a_pre_attachment_handler(text_only_handler) -> None:
+    result = infer(prompt="ping", profile=_profile())
+
+    assert result.payload == "pong"
+    assert result.meta.produced_by.attachments == []
+
+
+def test_attachments_to_a_pre_attachment_handler_fail_loudly(text_only_handler, red_png) -> None:
+    with pytest.raises(TypeError, match="attachments"):
+        infer(prompt="what", attachments=[Attachment(path=red_png)], profile=_profile())
