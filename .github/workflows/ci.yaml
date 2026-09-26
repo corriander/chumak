@@ -63,6 +63,18 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      # Must run before the QA action: its plain `uv run` rewrites a stale lock
+      # in the runner, which would hide the drift this check exists to catch.
+      # The lock's own-version line is bumped by release-please (see
+      # release-please-config.json) through an undocumented jsonpath, so this is
+      # what turns a silent regression of that into a red main.
+      - name: Check uv.lock is current
+        run: uv lock --check
+
       - uses: corriander/gha/uv/qa@v0.6.1
         env:
           UV_PYTHON: ${{ env.DEFAULT_PYTHON_VERSION }}
