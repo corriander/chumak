@@ -53,3 +53,10 @@ def test_digest_is_sha256_of_bytes(red_png: Path) -> None:
     digest = Attachment(path=red_png).digest()
     assert digest.sha256 == hashlib.sha256(red_png.read_bytes()).hexdigest()
     assert digest.mime == "image/png"
+
+
+def test_mime_cannot_be_swapped_after_validation(red_png: Path) -> None:
+    att = Attachment(path=red_png)
+    with pytest.raises(ValidationError, match="frozen"):
+        att.mime = "application/pdf"  # ty: ignore[invalid-assignment] — the runtime guard under test
+    assert att.media_type == "image/png"
