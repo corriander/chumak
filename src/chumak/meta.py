@@ -1,9 +1,13 @@
 """Meta builder.
 
 Stamps a `Meta` instance from a profile, an optional `Provenance` block, and
-whatever native response the handler produced. Cost and citation extraction
+whatever native response the transport produced. Cost and citation extraction
 are best-effort: handler types that don't surface either yield empty values
 rather than raising.
+
+`build_meta` is public. `infer()` uses it, and so can a consumer that made
+the model call itself (via `resolve_model`) and wants the same envelope
+stamped on the result — chumak records the call; it never runs the loop.
 """
 
 from __future__ import annotations
@@ -14,17 +18,31 @@ from typing import Any
 
 from langchain_core.messages import AIMessage
 
-from chumak.handlers.base import HandlerResult, UsageSource
+from chumak.handlers.base import UsageSource
 from chumak.profile import Profile
 from chumak.response import Citation, Cost, Meta, ProducedBy, Provenance
 
 
 def build_meta(
+    raw: Any,
     *,
     profile: Profile,
-    handler_result: HandlerResult,
+    prompt: str | None,
     provenance: Provenance | None = None,
 ) -> Meta:
+    """Stamp the `Meta` / `ProducedBy` / `Cost` / `Citation` envelope for one call.
+
+    Arguments:
+        raw: The native response object. An `AIMessage` yields token usage
+            and citations; anything else (e.g. the subprocess handler's
+            `SubprocessRaw`) yields empty best-effort fields.
+        profile: The `Profile` the call was made with. Supplies model
+            identity for `produced_by`.
+        prompt: The exact text sent to the transport. Hashed into
+            `produced_by.prompt_actual_sha256`; never stored verbatim.
+            `None` means the sent text is unknown, and records no hash.
+        provenance: Optional artefact identifiers and upstream references.
+    """
     template_sha = provenance.prompt_template_sha256 if provenance else None
     return Meta(
         artefact_type=provenance.artefact_type if provenance else None,
@@ -35,11 +53,11 @@ def build_meta(
             model=profile.model,
             prompt_version=profile.prompt_version,
             prompt_template_sha256=template_sha,
-            prompt_actual_sha256=_sha256_or_none(handler_result.rendered_prompt),
+            prompt_actual_sha256=_sha256_or_none(prompt),
         ),
         generated_at=datetime.now(UTC),
-        cost=_extract_cost(handler_result.raw),
-        citations=_extract_citations(handler_result.raw),
+        cost=_extract_cost(raw),
+        citations=_extract_citations(raw),
     )
 
 

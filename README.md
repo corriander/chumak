@@ -251,6 +251,30 @@ result.meta.artefact_type  # "mission_title@v1"
 result.meta.derived_from  # [...]
 ```
 
+### Orchestrate your own loop
+
+`infer()` is one-shot by design. If you run the loop yourself — an agent graph, a
+multi-turn conversation, a streaming UI — chumak still answers the two questions it
+exists for: *which model, configured how* and *what did this call produce*. You own
+everything in between.
+
+```python
+from chumak import build_meta, resolve_model
+
+model = resolve_model(profile)  # the same chat model infer() would use for this profile
+response = model.invoke(prompt)  # or .stream(), or hand `model` to your graph
+meta = build_meta(response, profile=profile, prompt=prompt)  # same envelope infer() stamps
+```
+
+- `resolve_model` is a **langchain-handler capability**. A subprocess profile pins its
+  model inside a CLI command, and a `systemone` profile's model is a decision engine
+  rather than a chat model; neither has anything to hand out, so both raise
+  `ProfileCapabilityError` rather than pretending.
+- `build_meta` stamps one call. Compose run-level lineage yourself with
+  `Provenance` / `ArtefactRef` / `derived_from` — chumak records, it never runs the loop.
+- No graph, conversation, callback, or streaming abstractions live here; LangChain /
+  LangGraph objects are the consumer's domain.
+
 ## Design notes
 
 - **No domain knowledge**: chumak carries no built-in prompts, no role concepts

@@ -50,6 +50,16 @@ def test_infer_without_schema_returns_text_payload(stub_handler) -> None:
     assert result.meta.generated_at is not None
 
 
+def test_infer_records_no_prompt_hash_when_handler_omits_rendered_prompt(stub_handler) -> None:
+    # A handler may augment the prompt without reporting what it sent; the
+    # caller's text is then not known to be what reached the transport.
+    stub_handler(HandlerResult(payload="ok"))
+
+    result = infer(prompt="ping", profile=_profile())
+
+    assert result.meta.produced_by.prompt_actual_sha256 is None
+
+
 def test_infer_with_provenance_populates_artefact_fields(stub_handler) -> None:
     payload = SampleOutput(title="Haul ore", bounty=42_000)
     stub_handler(HandlerResult(payload=payload, raw=None, rendered_prompt="extract"))

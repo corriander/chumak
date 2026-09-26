@@ -14,6 +14,7 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
+from chumak.errors import ProfileCapabilityError
 from chumak.handlers.subprocess import SubprocessHandler, _build_subprocess_prompt
 from chumak.handlers.types import HandlerType, PromptDelivery
 from chumak.profile import Profile
@@ -130,7 +131,7 @@ def test_execute_rejects_non_subprocess_profile() -> None:
         handler=HandlerType.LANGCHAIN,
         model="anthropic:claude-opus-4-7",
     )
-    with pytest.raises(ValueError, match="non-subprocess"):
+    with pytest.raises(ProfileCapabilityError, match="non-subprocess"):
         SubprocessHandler().execute(prompt="x", output_schema=Out, profile=bad_profile)
 
 
