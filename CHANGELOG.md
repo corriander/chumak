@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.5.0](https://github.com/corriander/chumak/compare/v0.4.0...v0.5.0) (2026-09-26)
+
+
+### Features
+
+* expose resolve_model and build_meta for consumer-orchestrated calls ([#49](https://github.com/corriander/chumak/issues/49)) ([4a50b5d](https://github.com/corriander/chumak/commit/4a50b5ddbb8a5eb1f26780ce16a00751d85650b8))
+* image attachments on infer() ([#51](https://github.com/corriander/chumak/issues/51)) ([ada4c55](https://github.com/corriander/chumak/commit/ada4c55da5df48ac0a87e44184aad2dbd8c0dd7a))
+* **loader:** add shared_profiles_dir for cross-app profiles ([#50](https://github.com/corriander/chumak/issues/50)) ([d58e829](https://github.com/corriander/chumak/commit/d58e829f3a584fde2228cf64c04e3459833793cf))
+
+
+### Bug Fixes
+
+* **deps:** bump langchain from 1.3.14 to 1.4.2 ([#56](https://github.com/corriander/chumak/issues/56)) ([c6f50ce](https://github.com/corriander/chumak/commit/c6f50ceebf417022ab9f4d12f294c63b0ac4c608))
+* **deps:** bump langchain-openai from 1.6.2 to 1.6.3 ([#55](https://github.com/corriander/chumak/issues/55)) ([746cd79](https://github.com/corriander/chumak/commit/746cd795463c3cfeb00cafcf5c8ccbfa04f77b26))
+* **deps:** bump pydantic from 2.13.4 to 2.13.5 ([#57](https://github.com/corriander/chumak/issues/57)) ([e6b60ee](https://github.com/corriander/chumak/commit/e6b60eeec03d93c6fc8f44632e64bd47bae70879))
+
+
+### Documentation
+
+* **readme:** show SecretStr for profiles built in code ([cd83fbf](https://github.com/corriander/chumak/commit/cd83fbf3b9717ed5725dbb35868fbae4ff3cc4a2))
+
 ## [0.4.0](https://github.com/corriander/chumak/compare/v0.3.0...v0.4.0) (2026-09-23)
 
 
