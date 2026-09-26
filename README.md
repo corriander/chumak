@@ -265,9 +265,10 @@ result.meta.derived_from  # [...]
 - **Provenance is opt-in**: omit `provenance=` and `meta.artefact_type` is `None`.
 - **Meta is safe to persist**: `meta.produced_by` records the profile name, model and
   prompt hashes, never `model_kwargs` or the key.
-- **The lib never reads env directly** for its own settings. The env overlay
-  for profiles is a deliberate, scoped exception, gated on the prefix the
-  consumer passes in.
+- **The lib never reads env directly** for its own settings. Two scoped exceptions:
+  the profile env overlay, gated on the prefix the consumer passes in; and
+  `shared_profiles_dir()`, which reads `XDG_CONFIG_HOME` only when the app calls it.
+  No directory is ever searched automatically.
 
 ## Tooling
 

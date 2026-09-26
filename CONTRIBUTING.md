@@ -4,7 +4,7 @@
 
 - **Keep the substrate thin.** chumak coordinates handlers, profiles, and meta. It does not own prompts, domain concepts, or secret management — those are consumer concerns.
 - **Handlers are pluggable.** Adding a transport (LangChain, subprocess, …) is dropping a module under `src/chumak/handlers/`, extending `HandlerType`, and registering it in `HANDLER_REGISTRY`. No edits in `surface.py` or `profile.py`.
-- **The library never reads env vars unprompted.** The profile env-overlay is the one exception, gated on the prefix the consumer passes to `ProfileLoader`.
+- **The library never reads env vars unprompted.** Two exceptions, both opted into by the consumer: the profile env-overlay, gated on the prefix passed to `ProfileLoader`; and `shared_profiles_dir()`, which reads `XDG_CONFIG_HOME` only when called. The library never adds a search path on its own.
 - **Prefer fixtures over hand-rolled setup.** See `tests/conftest.py` (`write_profile`, `make_loader`, `stub_handler`).
 
 ## Dev setup
