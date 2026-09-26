@@ -20,6 +20,7 @@ from chumak.loader import (
     ProfileLoader,
     ProfileLoaderError,
     ProfileNotFoundError,
+    shared_profiles_dir,
 )
 from chumak.meta import build_meta
 from chumak.profile import Profile
@@ -57,4 +58,5 @@ __all__ = [
     "build_meta",
     "infer",
     "resolve_model",
+    "shared_profiles_dir",
 ]

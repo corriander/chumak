@@ -49,13 +49,38 @@ class ProfileCycleError(ProfileLoaderError):
     """The `extends` chain forms a cycle."""
 
 
+def shared_profiles_dir(env: Mapping[str, str] | None = None) -> Path:
+    """The cross-app profile folder: `$XDG_CONFIG_HOME/chumak/profiles`.
+
+    Falls back to `~/.config/chumak/profiles` when `XDG_CONFIG_HOME` is unset
+    or not absolute (the XDG spec says to ignore relative values). "Absolute"
+    is judged by the host OS, so on Windows a POSIX-style `/home/...` value
+    also falls back. The same layout is used on every platform; there is no
+    `%APPDATA%` special case. The directory need not exist; `ProfileLoader`
+    skips search paths that aren't there.
+
+    chumak never adds this to a loader itself. An app opts in by listing it
+    after its own directory, so the app can still shadow a shared profile:
+
+        ProfileLoader(search_paths=[app_dir, shared_profiles_dir()], ...)
+
+    Reads `XDG_CONFIG_HOME` only when called. `env` defaults to `os.environ`
+    and is overridable for testing; it governs `XDG_CONFIG_HOME` only. The
+    fallback comes from `Path.home()`, which reads the real environment.
+    """
+    env = env if env is not None else os.environ
+    xdg = env.get("XDG_CONFIG_HOME", "")
+    base = Path(xdg) if xdg and Path(xdg).is_absolute() else Path.home() / ".config"
+    return base / "chumak" / "profiles"
+
+
 class ProfileLoader:
     """Resolves profile names to validated `Profile` instances.
 
     `search_paths` is a list of directories. The loader searches them in
     order for `<name>.toml`; the first match wins. This lets apps shadow
     bundled defaults with user overrides (user dir first, app default dir
-    second).
+    second), and shared profiles with app ones (see `shared_profiles_dir`).
 
     `env_prefix` is the app-specific prefix for the env overlay
     (e.g. `"GALOPS_VISION"`). Required — leaving it implicit would risk

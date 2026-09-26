@@ -114,6 +114,35 @@ Profiles are user-authored. chumak ships at most one generic example
 Profiles live in consumer app directory, e.g. `~/.config/<your-app>/chumak/profiles/`.
 chumak does not impose a config dir; the app passes `search_paths` to `ProfileLoader`.
 
+### Shared profiles
+
+To define a profile once and use it from several apps, put it in the shared folder,
+`$XDG_CONFIG_HOME/chumak/profiles/` (by default `~/.config/chumak/profiles/`). Apps then
+ask for it by name (`loader.load("jev")`), and which model that name means is decided
+in one place.
+
+chumak never searches the shared folder on its own. An app opts in by listing it after
+its own directory:
+
+```python
+from chumak import ProfileLoader, shared_profiles_dir
+
+loader = ProfileLoader(
+    search_paths=[app_profiles_dir, shared_profiles_dir()],
+    env_prefix="MYAPP",
+)
+```
+
+The first match wins, so a same-named file in the app's directory overrides the shared
+one. The env overlay still uses the app's own prefix, so keys stay per app and the
+shared file never needs to hold one. `extends` resolves through the same search paths,
+so an app profile can extend a shared one, but only under a different name: an app's
+`jev.toml` with `extends = "jev"` finds itself first and fails as a cycle. Name the
+variant (`my-jev.toml`, `extends = "jev"`) instead.
+
+The folder follows XDG on every platform, Windows included (`~/.config`, not
+`%APPDATA%`).
+
 ### File shape
 
 ```toml
@@ -308,9 +337,10 @@ meta = build_meta(response, profile=profile, prompt=prompt)  # same envelope inf
 - **Provenance is opt-in**: omit `provenance=` and `meta.artefact_type` is `None`.
 - **Meta is safe to persist**: `meta.produced_by` records the profile name, model and
   prompt hashes, never `model_kwargs` or the key.
-- **The lib never reads env directly** for its own settings. The env overlay
-  for profiles is a deliberate, scoped exception, gated on the prefix the
-  consumer passes in.
+- **The lib never reads env directly** for its own settings. Two scoped exceptions:
+  the profile env overlay, gated on the prefix the consumer passes in; and
+  `shared_profiles_dir()`, which reads `XDG_CONFIG_HOME` only when the app calls it.
+  No directory is ever searched automatically.
 
 ## Tooling
 

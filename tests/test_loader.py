@@ -8,12 +8,18 @@ exercise each layer independently and together.
 from __future__ import annotations
 
 import textwrap
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
 from chumak.handlers.types import HandlerType, PromptDelivery
-from chumak.loader import ProfileCycleError, ProfileNotFoundError
+from chumak.loader import (
+    ProfileCycleError,
+    ProfileLoader,
+    ProfileNotFoundError,
+    shared_profiles_dir,
+)
 
 
 @pytest.fixture
@@ -240,3 +246,83 @@ def test_load_all(write_profile, make_loader, claude_base_body) -> None:
     profiles = loader.load_all()
     assert set(profiles) == {"claude", "claude-creative"}
     assert profiles["claude-creative"].temperature == 0.7
+
+
+# --- shared_profiles_dir ----------------------------------------------------
+
+
+def test_shared_profiles_dir_follows_xdg_config_home(tmp_path: Path) -> None:
+    env = {"XDG_CONFIG_HOME": str(tmp_path)}
+    assert shared_profiles_dir(env) == tmp_path / "chumak" / "profiles"
+
+
+@pytest.mark.parametrize("xdg", [None, "", "relative/config"])
+def test_shared_profiles_dir_falls_back_to_home_config(xdg: str | None) -> None:
+    """Unset, empty and relative values all fall back; the XDG spec says to
+    ignore a relative `XDG_CONFIG_HOME`."""
+    env = {} if xdg is None else {"XDG_CONFIG_HOME": xdg}
+    assert shared_profiles_dir(env) == Path.home() / ".config" / "chumak" / "profiles"
+
+
+def test_app_dir_shadows_shared_and_shared_fills_gaps(tmp_path: Path) -> None:
+    """The documented opt-in: app dir first, shared dir second."""
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+    shared = shared_profiles_dir({"XDG_CONFIG_HOME": str(tmp_path / "xdg")})
+    shared.mkdir(parents=True)
+    (shared / "jev.toml").write_text('handler = "systemone"\nmodel = "jev-latest"\n')
+    (shared / "claude.toml").write_text('handler = "langchain"\nmodel = "anthropic:shared"\n')
+    (app_dir / "claude.toml").write_text('handler = "langchain"\nmodel = "anthropic:app"\n')
+
+    loader = ProfileLoader(search_paths=[app_dir, shared], env_prefix="")
+
+    assert loader.load("jev").model == "jev-latest"
+    assert loader.load("claude").model == "anthropic:app"
+
+
+def test_missing_shared_dir_is_harmless(write_profile, profile_dir, claude_base_body) -> None:
+    write_profile("claude", claude_base_body)
+    missing = shared_profiles_dir({"XDG_CONFIG_HOME": str(profile_dir / "nowhere")})
+
+    loader = ProfileLoader(search_paths=[profile_dir, missing], env_prefix="")
+
+    assert loader.names() == ["claude"]
+    with pytest.raises(ProfileNotFoundError):
+        loader.load("jev")
+
+
+def test_shared_profile_takes_each_apps_own_key(tmp_path: Path) -> None:
+    """The env overlay uses the loading app's prefix, so the shared file needs
+    no key and two apps sharing it keep separate ones."""
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    (shared / "jev.toml").write_text('handler = "systemone"\nmodel = "jev-latest"\n')
+    env = {"APP_A_PROFILE_JEV_API_KEY": "key-a", "APP_B_PROFILE_JEV_API_KEY": "key-b"}
+
+    def key(prefix: str) -> str | None:
+        app_dir = tmp_path / prefix
+        app_dir.mkdir()
+        loader = ProfileLoader(search_paths=[app_dir, shared], env_prefix=prefix, env=env)
+        api_key = loader.load("jev").api_key
+        return api_key.get_secret_value() if api_key else None
+
+    assert key("APP_A") == "key-a"
+    assert key("APP_B") == "key-b"
+
+
+def test_app_extends_shared_profile_only_under_a_new_name(tmp_path: Path) -> None:
+    """`extends` searches the app dir first, so a same-named parent finds the
+    child again. The README tells apps to name the variant instead."""
+    app_dir, shared = tmp_path / "app", tmp_path / "shared"
+    app_dir.mkdir()
+    shared.mkdir()
+    (shared / "jev.toml").write_text('handler = "systemone"\nmodel = "jev-latest"\n')
+    (app_dir / "my-jev.toml").write_text('extends = "jev"\ntemperature = 0.2\n')
+    loader = ProfileLoader(search_paths=[app_dir, shared], env_prefix="")
+
+    variant = loader.load("my-jev")
+    assert (variant.model, variant.temperature) == ("jev-latest", 0.2)
+
+    (app_dir / "jev.toml").write_text('extends = "jev"\ntemperature = 0.2\n')
+    with pytest.raises(ProfileCycleError):
+        loader.load("jev")
