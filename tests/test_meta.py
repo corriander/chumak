@@ -57,6 +57,16 @@ def test_prompt_actual_sha256_hashes_rendered_prompt() -> None:
     assert meta.produced_by.prompt_actual_sha256 == expected
 
 
+def test_prompt_actual_sha256_hashes_the_empty_string() -> None:
+    meta = build_meta(None, profile=_profile(), prompt="")
+    assert meta.produced_by.prompt_actual_sha256 == hashlib.sha256(b"").hexdigest()
+
+
+def test_unknown_prompt_records_no_hash() -> None:
+    meta = build_meta(None, profile=_profile(), prompt=None)
+    assert meta.produced_by.prompt_actual_sha256 is None
+
+
 def test_provenance_carries_neither_model_kwargs_nor_the_key() -> None:
     """`meta` is what consumers persist, so nothing credential-shaped rides on it."""
     profile = Profile(

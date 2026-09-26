@@ -27,7 +27,7 @@ def build_meta(
     raw: Any,
     *,
     profile: Profile,
-    prompt: str,
+    prompt: str | None,
     provenance: Provenance | None = None,
 ) -> Meta:
     """Stamp the `Meta` / `ProducedBy` / `Cost` / `Citation` envelope for one call.
@@ -40,6 +40,7 @@ def build_meta(
             identity for `produced_by`.
         prompt: The exact text sent to the transport. Hashed into
             `produced_by.prompt_actual_sha256`; never stored verbatim.
+            `None` means the sent text is unknown, and records no hash.
         provenance: Optional artefact identifiers and upstream references.
     """
     template_sha = provenance.prompt_template_sha256 if provenance else None
@@ -52,12 +53,18 @@ def build_meta(
             model=profile.model,
             prompt_version=profile.prompt_version,
             prompt_template_sha256=template_sha,
-            prompt_actual_sha256=hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
+            prompt_actual_sha256=_sha256_or_none(prompt),
         ),
         generated_at=datetime.now(UTC),
         cost=_extract_cost(raw),
         citations=_extract_citations(raw),
     )
+
+
+def _sha256_or_none(text: str | None) -> str | None:
+    if text is None:
+        return None
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def _extract_cost(raw: Any) -> Cost:
