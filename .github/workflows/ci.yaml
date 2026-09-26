@@ -63,31 +63,40 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: astral-sh/setup-uv@v7
-        with:
-          enable-cache: true
-
-      # Must run before the QA action: its plain `uv run` rewrites a stale lock
-      # in the runner, which would hide the drift this check exists to catch.
-      # The lock's own-version line is bumped by release-please (see
-      # release-please-config.json) through an undocumented jsonpath, so this is
-      # what turns a silent regression of that into a red main.
-      - name: Check uv.lock is current
-        run: uv lock --check
-
       - uses: corriander/gha/uv/qa@v0.6.1
         env:
           UV_PYTHON: ${{ env.DEFAULT_PYTHON_VERSION }}
 
+  lock:
+    name: 🔒 Lock
+    # No release-commit skip here, unlike validation/qa: the release commit is
+    # exactly where release-please's uv.lock bump (release-please-config.json,
+    # via an undocumented jsonpath) could silently stop matching. This job gates
+    # `release`, so a stale lock blocks the publish rather than shipping under a
+    # green run. Its own job because the shared QA action's plain `uv run`
+    # would rewrite a stale lock in the runner and mask the drift.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Check uv.lock is current
+        run: uv lock --check
+
   release:
     name: 🚀 Release
     runs-on: ubuntu-latest
-    needs: [validation, qa]
+    needs: [validation, qa, lock]
     permissions:
       contents: write
       pull-requests: write
       id-token: write  # for PyPI trusted publishing
-    if: |  # always run on default branch as long as no failures, even if validation/qa are skipped
+    if: |  # always run on default branch as long as no failures, even if validation/qa are skipped (lock never is)
       always()
       && !contains(needs.*.result, 'failure')
       && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
