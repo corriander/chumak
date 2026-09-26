@@ -289,3 +289,40 @@ def test_missing_shared_dir_is_harmless(write_profile, profile_dir, claude_base_
     assert loader.names() == ["claude"]
     with pytest.raises(ProfileNotFoundError):
         loader.load("jev")
+
+
+def test_shared_profile_takes_each_apps_own_key(tmp_path: Path) -> None:
+    """The env overlay uses the loading app's prefix, so the shared file needs
+    no key and two apps sharing it keep separate ones."""
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    (shared / "jev.toml").write_text('handler = "systemone"\nmodel = "jev-latest"\n')
+    env = {"APP_A_PROFILE_JEV_API_KEY": "key-a", "APP_B_PROFILE_JEV_API_KEY": "key-b"}
+
+    def key(prefix: str) -> str | None:
+        app_dir = tmp_path / prefix
+        app_dir.mkdir()
+        loader = ProfileLoader(search_paths=[app_dir, shared], env_prefix=prefix, env=env)
+        api_key = loader.load("jev").api_key
+        return api_key.get_secret_value() if api_key else None
+
+    assert key("APP_A") == "key-a"
+    assert key("APP_B") == "key-b"
+
+
+def test_app_extends_shared_profile_only_under_a_new_name(tmp_path: Path) -> None:
+    """`extends` searches the app dir first, so a same-named parent finds the
+    child again. The README tells apps to name the variant instead."""
+    app_dir, shared = tmp_path / "app", tmp_path / "shared"
+    app_dir.mkdir()
+    shared.mkdir()
+    (shared / "jev.toml").write_text('handler = "systemone"\nmodel = "jev-latest"\n')
+    (app_dir / "my-jev.toml").write_text('extends = "jev"\ntemperature = 0.2\n')
+    loader = ProfileLoader(search_paths=[app_dir, shared], env_prefix="")
+
+    variant = loader.load("my-jev")
+    assert (variant.model, variant.temperature) == ("jev-latest", 0.2)
+
+    (app_dir / "jev.toml").write_text('extends = "jev"\ntemperature = 0.2\n')
+    with pytest.raises(ProfileCycleError):
+        loader.load("jev")

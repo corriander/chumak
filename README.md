@@ -136,7 +136,12 @@ loader = ProfileLoader(
 The first match wins, so a same-named file in the app's directory overrides the shared
 one. The env overlay still uses the app's own prefix, so keys stay per app and the
 shared file never needs to hold one. `extends` resolves through the same search paths,
-so an app profile can extend a shared one under a different name.
+so an app profile can extend a shared one, but only under a different name: an app's
+`jev.toml` with `extends = "jev"` finds itself first and fails as a cycle. Name the
+variant (`my-jev.toml`, `extends = "jev"`) instead.
+
+The folder follows XDG on every platform, Windows included (`~/.config`, not
+`%APPDATA%`).
 
 ### File shape
 

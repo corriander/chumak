@@ -53,8 +53,11 @@ def shared_profiles_dir(env: Mapping[str, str] | None = None) -> Path:
     """The cross-app profile folder: `$XDG_CONFIG_HOME/chumak/profiles`.
 
     Falls back to `~/.config/chumak/profiles` when `XDG_CONFIG_HOME` is unset
-    or relative (the XDG spec says to ignore relative values). The directory
-    need not exist; `ProfileLoader` skips search paths that aren't there.
+    or not absolute (the XDG spec says to ignore relative values). "Absolute"
+    is judged by the host OS, so on Windows a POSIX-style `/home/...` value
+    also falls back. The same layout is used on every platform; there is no
+    `%APPDATA%` special case. The directory need not exist; `ProfileLoader`
+    skips search paths that aren't there.
 
     chumak never adds this to a loader itself. An app opts in by listing it
     after its own directory, so the app can still shadow a shared profile:
@@ -62,7 +65,8 @@ def shared_profiles_dir(env: Mapping[str, str] | None = None) -> Path:
         ProfileLoader(search_paths=[app_dir, shared_profiles_dir()], ...)
 
     Reads `XDG_CONFIG_HOME` only when called. `env` defaults to `os.environ`
-    and is overridable for testing.
+    and is overridable for testing; it governs `XDG_CONFIG_HOME` only. The
+    fallback comes from `Path.home()`, which reads the real environment.
     """
     env = env if env is not None else os.environ
     xdg = env.get("XDG_CONFIG_HOME", "")
