@@ -13,6 +13,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from chumak.attachments import AttachmentDigest
+
 
 class Citation(BaseModel):
     """Normalised citation. Shape mirrors LangChain's content-block
@@ -98,6 +100,13 @@ class ProducedBy(BaseModel):
             "SHA256 of the actual text sent to the underlying transport, after "
             "any handler-level augmentation (e.g. subprocess schema injection). "
             "Differs from `prompt_template_sha256` by exactly the augmentation."
+        ),
+    )
+    attachments: list[AttachmentDigest] = Field(
+        default_factory=list,
+        description=(
+            "Digest of each attachment actually sent with the prompt, in order. "
+            "Empty for text-only calls. `prompt_actual_sha256` covers the text only."
         ),
     )
 

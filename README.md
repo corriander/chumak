@@ -210,6 +210,24 @@ its own frames.
   for a server without auth, a placeholder such as `api_key = "sk-no-auth"` in TOML is
   fine, since it is not a secret.
 
+When you build a profile in code, pass a `SecretStr`. Pydantic accepts a plain string
+at runtime, but some type checkers hold the argument to the declared type,
+`SecretStr | None`, and reject it:
+
+```python
+from pydantic import SecretStr
+
+from chumak import HandlerType, Profile
+
+profile = Profile(
+    name="local-edge",
+    handler=HandlerType.LANGCHAIN,
+    model="openai:mistral-7b",
+    api_key=SecretStr("sk-no-auth"),  # placeholder for an unauthenticated server
+    model_kwargs={"base_url": "http://localhost:8080/v1"},
+)
+```
+
 Profile validation errors never echo input values, so a key routed to the wrong
 field doesn't end up in the message.
 
@@ -244,6 +262,31 @@ result.citations  # -> [Citation, ...] (if the model supplied any)
 result.meta  # -> Meta with cost, generated_at, model identity
 ```
 
+### With an image
+
+```python
+from chumak import Attachment
+
+result = infer(
+    prompt="Extract the mission title and reward from this screenshot.",
+    attachments=[Attachment(path=Path("shot.png"))],  # mime sniffed from the extension
+    output_schema=AnneSchema,
+    profile=profile,
+)
+result.meta.produced_by.attachments  # -> [AttachmentDigest(sha256=..., mime="image/png")]
+```
+
+Attachments are **langchain-handler only**: they become one multimodal message (text
+part + base64 image parts) that LangChain translates to the provider's native shape, so
+`anthropic:*`, `openai:*`, and `openai:*` + `base_url` (local OpenAI-compatible servers)
+all work. Image MIME types only, local paths only. The other handlers raise
+`ProfileCapabilityError` rather than drop the images: agent CLIs behind a `subprocess`
+profile already take images by path reference in the prompt (`@{path}`), and that
+remains the idiom there; `systemone` takes a text state only. Each attachment's SHA-256
+and MIME land in `meta.produced_by.attachments`; `prompt_actual_sha256` still covers the
+text alone. If you make the call yourself (see "Orchestrate your own loop"), pass
+`attachments=[a.digest() for a in ...]` to `build_meta` to get the same record.
+
 ### With provenance
 
 ```python
@@ -261,6 +304,30 @@ result = infer(
 result.meta.artefact_type  # "mission_title@v1"
 result.meta.derived_from  # [...]
 ```
+
+### Orchestrate your own loop
+
+`infer()` is one-shot by design. If you run the loop yourself — an agent graph, a
+multi-turn conversation, a streaming UI — chumak still answers the two questions it
+exists for: *which model, configured how* and *what did this call produce*. You own
+everything in between.
+
+```python
+from chumak import build_meta, resolve_model
+
+model = resolve_model(profile)  # the same chat model infer() would use for this profile
+response = model.invoke(prompt)  # or .stream(), or hand `model` to your graph
+meta = build_meta(response, profile=profile, prompt=prompt)  # same envelope infer() stamps
+```
+
+- `resolve_model` is a **langchain-handler capability**. A subprocess profile pins its
+  model inside a CLI command, and a `systemone` profile's model is a decision engine
+  rather than a chat model; neither has anything to hand out, so both raise
+  `ProfileCapabilityError` rather than pretending.
+- `build_meta` stamps one call. Compose run-level lineage yourself with
+  `Provenance` / `ArtefactRef` / `derived_from` — chumak records, it never runs the loop.
+- No graph, conversation, callback, or streaming abstractions live here; LangChain /
+  LangGraph objects are the consumer's domain.
 
 ## Design notes
 

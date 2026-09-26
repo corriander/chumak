@@ -4,7 +4,14 @@
     ".": {
       "release-type": "python",
       "include-component-in-tag": false,
-      "bump-minor-pre-major": true
+      "bump-minor-pre-major": true,
+      "extra-files": [
+        {
+          "path": "uv.lock",
+          "type": "toml",
+          "jsonpath": "$.package[?(@.name.value=='chumak')].version"
+        }
+      ]
     }
   }
 }

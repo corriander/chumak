@@ -14,6 +14,8 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
+from chumak.attachments import Attachment
+from chumak.errors import ProfileCapabilityError
 from chumak.handlers.subprocess import SubprocessHandler, _build_subprocess_prompt
 from chumak.handlers.types import HandlerType, PromptDelivery
 from chumak.profile import Profile
@@ -58,6 +60,22 @@ def test_execute_without_schema_raises(mocker) -> None:
     run = mocker.patch.object(handler, "_run")
     with pytest.raises(ValueError, match="requires an output_schema"):
         handler.execute(prompt="extract", output_schema=None, profile=_profile())
+    run.assert_not_called()
+
+
+def test_execute_rejects_attachments(mocker, red_png) -> None:
+    # Attachments are a langchain-handler capability. The subprocess idiom is a
+    # path reference in the prompt, so a non-empty `attachments` must refuse
+    # loudly (and never shell out) rather than be silently dropped.
+    handler = SubprocessHandler()
+    run = mocker.patch.object(handler, "_run")
+    with pytest.raises(ProfileCapabilityError, match="does not accept attachments"):
+        handler.execute(
+            prompt="extract @{shot.png}",
+            output_schema=Out,
+            profile=_profile(),
+            attachments=[Attachment(path=red_png)],
+        )
     run.assert_not_called()
 
 
@@ -130,7 +148,7 @@ def test_execute_rejects_non_subprocess_profile() -> None:
         handler=HandlerType.LANGCHAIN,
         model="anthropic:claude-opus-4-7",
     )
-    with pytest.raises(ValueError, match="non-subprocess"):
+    with pytest.raises(ProfileCapabilityError, match="non-subprocess"):
         SubprocessHandler().execute(prompt="x", output_schema=Out, profile=bad_profile)
 
 

@@ -15,19 +15,98 @@ Two paths, chosen by whether the caller supplies an `output_schema`:
     the call tests only the endpoint and the model's free-text response — not
     the model's ability to satisfy a Pydantic schema. This is the path a
     liveness/smoke probe or a one-shot free-text question wants.
+
+`resolve_model()` is the public half of this module: it constructs the chat
+model a profile describes and hands it to the caller, for consumers that run
+their own loop (agent graphs, multi-turn, streaming) but still want chumak to
+answer "which model, configured how". `execute()` goes through the same
+function, so there is exactly one kwargs-assembly path.
+
+Attachments ride along either path. With none, the prompt goes in as the
+bare string it always did. With some, it becomes a single `HumanMessage`
+of standard content blocks — one text part, then one ``image`` part per
+attachment (base64 + MIME) — which LangChain's provider integrations
+translate to their native shape (OpenAI ``image_url`` data URLs, Anthropic
+``source`` blocks, …). Still one-shot: no roles, no history.
 """
 
 from __future__ import annotations
 
+import base64
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 from langchain.chat_models import init_chat_model
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import HumanMessage
 from pydantic import BaseModel
 
+from chumak.attachments import Attachment, AttachmentDigest, digest_bytes
+from chumak.errors import ProfileCapabilityError
 from chumak.handlers.base import HandlerResult
+from chumak.handlers.types import HandlerType
 
 if TYPE_CHECKING:
     from chumak.profile import Profile
+
+
+def resolve_model(profile: Profile) -> BaseChatModel:
+    """Construct the chat model a langchain-handler profile describes.
+
+    Applies the profile's `temperature` / `max_tokens` / `api_key` and then
+    `model_kwargs` (which win on conflict) and passes the lot to
+    `init_chat_model`. This is the exact model `infer()` would call for the
+    same profile.
+
+    Raises `ProfileCapabilityError` for profiles on any other handler: a
+    subprocess profile pins its model inside a CLI command and has no chat
+    model to hand out. That partiality is the honest contract — model
+    resolution is a langchain-handler capability, not a profile-wide one.
+    """
+    if profile.handler is not HandlerType.LANGCHAIN:
+        raise ProfileCapabilityError(
+            f"Profile {profile.name!r} uses the {profile.handler.value!r} handler; "
+            f"only {HandlerType.LANGCHAIN.value!r} profiles resolve to a chat model"
+        )
+    kwargs: dict[str, Any] = {}
+    if profile.temperature is not None:
+        kwargs["temperature"] = profile.temperature
+    if profile.max_tokens is not None:
+        kwargs["max_tokens"] = profile.max_tokens
+    # Unwrapped only here, at the SDK boundary. Unset: the provider class
+    # reads its own variable (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, ...).
+    if profile.api_key is not None:
+        kwargs["api_key"] = profile.api_key.get_secret_value()
+    kwargs.update(profile.model_kwargs)
+    return init_chat_model(profile.model, **kwargs)
+
+
+def _build_input(
+    prompt: str, attachments: Sequence[Attachment]
+) -> tuple[str | list[HumanMessage], list[AttachmentDigest]]:
+    """The transport input plus the digests of what it carries.
+
+    Text-only calls keep the bare-string input so behaviour (and any
+    provider-side prompt handling) is unchanged from before attachments
+    existed. Bytes are read exactly once: the same buffer feeds the base64
+    part and the digest, so provenance records what was actually sent.
+    """
+    if not attachments:
+        return prompt, []
+    parts: list[str | dict[str, Any]] = [{"type": "text", "text": prompt}]
+    digests: list[AttachmentDigest] = []
+    for attachment in attachments:
+        data = attachment.read_bytes()
+        mime = attachment.media_type
+        parts.append(
+            {
+                "type": "image",
+                "base64": base64.b64encode(data).decode("ascii"),
+                "mime_type": mime,
+            }
+        )
+        digests.append(digest_bytes(data, mime=mime))
+    return [HumanMessage(content=parts)], digests
 
 
 class LangChainHandler:
@@ -36,32 +115,30 @@ class LangChainHandler:
         prompt: str,
         output_schema: type[BaseModel] | None,
         profile: Profile,
+        attachments: Sequence[Attachment] = (),
     ) -> HandlerResult:
-        kwargs: dict[str, Any] = {}
-        if profile.temperature is not None:
-            kwargs["temperature"] = profile.temperature
-        if profile.max_tokens is not None:
-            kwargs["max_tokens"] = profile.max_tokens
-        # Unwrapped only here, at the SDK boundary. Unset: the provider class
-        # reads its own variable (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, ...).
-        if profile.api_key is not None:
-            kwargs["api_key"] = profile.api_key.get_secret_value()
-        kwargs.update(profile.model_kwargs)
-
-        model = init_chat_model(profile.model, **kwargs)
+        model_input, digests = _build_input(prompt, attachments)
+        model = resolve_model(profile)
 
         if output_schema is None:
             # Untyped: plain generation, no structured-output translation.
             # `.text` collapses string-or-content-block responses to text.
-            raw = model.invoke(prompt)
+            raw = model.invoke(model_input)
             return HandlerResult(
                 payload=raw.text,
                 raw=raw,
                 rendered_prompt=prompt,
+                attachments=digests,
             )
 
         structured = model.with_structured_output(output_schema, include_raw=True)
-        result = structured.invoke(prompt)
+        result = structured.invoke(model_input)
+        if not isinstance(result, dict):
+            # `include_raw=True` contractually yields the {parsed, raw, parsing_error}
+            # envelope; anything else means the integration broke that contract.
+            raise TypeError(
+                f"Structured output returned {type(result).__name__}, expected include_raw dict"
+            )
 
         if result.get("parsing_error"):
             raise ValueError(f"Structured output parsing failed: {result['parsing_error']}")
@@ -69,4 +146,5 @@ class LangChainHandler:
             payload=result["parsed"],
             raw=result["raw"],
             rendered_prompt=prompt,
+            attachments=digests,
         )

@@ -57,9 +57,13 @@ from typing import TYPE_CHECKING, Any, Literal, get_args, get_origin
 from pydantic import BaseModel
 from pydantic.fields import FieldInfo
 
+from chumak.errors import ProfileCapabilityError
 from chumak.handlers.base import HandlerResult
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from chumak.attachments import Attachment
     from chumak.profile import Profile
 
 try:  # pragma: no cover - trivial import guard
@@ -402,7 +406,16 @@ class SystemOneHandler:
         prompt: str,
         output_schema: type[BaseModel] | None,
         profile: Profile,
+        attachments: Sequence[Attachment] = (),
     ) -> HandlerResult:
+        if attachments:
+            # Jev's input is a text `state`; there is nowhere to put an image.
+            # Refuse rather than answer questions about a picture it never saw.
+            raise ProfileCapabilityError(
+                f"SystemOneHandler does not accept attachments (profile {profile.name!r}, "
+                f"{len(attachments)} given): System One takes a text state only; "
+                "attachments are a langchain-handler capability"
+            )
         if not _SDK_AVAILABLE:
             raise SystemOneError(f"Profile {profile.name!r}: {_INSTALL_HINT}")
         if output_schema is None:

@@ -8,8 +8,11 @@ opt-in — pass `provenance=Provenance(...)` to populate `meta.artefact_type`
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from pydantic import BaseModel
 
+from chumak.attachments import Attachment
 from chumak.handlers import HANDLER_REGISTRY
 from chumak.meta import build_meta
 from chumak.profile import Profile
@@ -19,6 +22,7 @@ from chumak.response import InferResult, Provenance
 def infer(
     *,
     prompt: str,
+    attachments: Sequence[Attachment] = (),
     output_schema: type[BaseModel] | None = None,
     profile: Profile,
     provenance: Provenance | None = None,
@@ -27,6 +31,11 @@ def infer(
 
     Arguments:
         prompt: Verbatim prompt text. The library does no templating.
+        attachments: Optional images to send alongside the prompt (see
+            `Attachment`). Supported by the langchain handler, which builds
+            a multimodal message; the subprocess handler rejects them (use
+            the CLI's own path-reference idiom in the prompt instead). Each
+            attachment's digest lands in `meta.produced_by.attachments`.
         output_schema: Optional Pydantic `BaseModel` subclass. When given, the
             handler returns a validated instance of it in `result.payload`.
             When omitted (``None``), the call is untyped: `result.payload` is
@@ -40,8 +49,25 @@ def infer(
     """
     handler_cls = HANDLER_REGISTRY[profile.handler]
     handler = handler_cls()
-    handler_result = handler.execute(prompt=prompt, output_schema=output_schema, profile=profile)
-    meta = build_meta(profile=profile, handler_result=handler_result, provenance=provenance)
+    # Text-only calls omit the keyword, so a handler written before
+    # attachments existed — `execute(prompt, output_schema, profile)` — still
+    # works. Non-empty attachments to such a handler fail loudly at the call.
+    extra = {"attachments": attachments} if attachments else {}
+    handler_result = handler.execute(
+        prompt=prompt,
+        output_schema=output_schema,
+        profile=profile,
+        **extra,
+    )
+    # No rendered prompt means the sent text is unknown — a handler may have
+    # augmented it — so it is not assumed to be the caller's text.
+    meta = build_meta(
+        handler_result.raw,
+        profile=profile,
+        prompt=handler_result.rendered_prompt,
+        provenance=provenance,
+        attachments=handler_result.attachments,
+    )
     return InferResult(
         payload=handler_result.payload,
         citations=meta.citations,
