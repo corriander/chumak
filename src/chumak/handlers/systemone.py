@@ -59,6 +59,7 @@ from pydantic.fields import FieldInfo
 
 from chumak.errors import ProfileCapabilityError
 from chumak.handlers.base import HandlerResult
+from chumak.handlers.types import HandlerType
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -408,6 +409,14 @@ class SystemOneHandler:
         profile: Profile,
         attachments: Sequence[Attachment] = (),
     ) -> HandlerResult:
+        if profile.handler is not HandlerType.SYSTEMONE:
+            # `infer()` never routes here with another handler's profile, but a
+            # direct call could, and would send that profile's `api_key` to the
+            # TypeSafe endpoint. Mirrors SubprocessHandler.
+            raise ProfileCapabilityError(
+                f"SystemOneHandler called with non-systemone profile {profile.name!r} "
+                f"(handler {profile.handler.value!r})"
+            )
         if attachments:
             # Jev's input is a text `state`; there is nowhere to put an image.
             # Refuse rather than answer questions about a picture it never saw.

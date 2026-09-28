@@ -299,6 +299,20 @@ def test_unknown_model_kwargs_are_forwarded_as_extra_body() -> None:
     assert rec.body()["future_flag"] is True
 
 
+def test_execute_rejects_non_systemone_profile() -> None:
+    """Another handler's profile must not reach TypeSafe, key and all."""
+    bad_profile = Profile(
+        name="not-jev",
+        handler=HandlerType.LANGCHAIN,
+        model="anthropic:claude-opus-4-7",
+        api_key="sk-anthropic",
+    )
+    recorder = Recorder([(200, ok_response())])
+    with pytest.raises(ProfileCapabilityError, match="non-systemone"):
+        SystemOneHandler(recorder.transport).execute("s", Verdict, bad_profile)
+    assert recorder.requests == []
+
+
 def test_untyped_call_is_rejected() -> None:
     with pytest.raises(ValueError, match="requires an output_schema"):
         SystemOneHandler(Recorder([]).transport).execute("s", None, make_profile())
