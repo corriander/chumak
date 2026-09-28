@@ -15,6 +15,10 @@ The loader is the interesting bit. Three layers compose, in order:
      with `__` as the nested-dict delimiter so single `_` can live inside
      field names (`model_kwargs`, `max_tokens`, ...) without ambiguity.
 
+     Profile names can still overlap: with `child` and `child-account`
+     both on disk, `..._PROFILE_CHILD_ACCOUNT_API_KEY` fits either one.
+     `_env_owner` gives each variable to exactly one profile.
+
 The result is validated as `Profile`. The library never reads env vars on
 its own initiative — the overlay is gated on the prefix the consumer passes
 to the `ProfileLoader` constructor.
@@ -28,13 +32,14 @@ from __future__ import annotations
 
 import os
 import tomllib
-from collections.abc import Mapping, MutableMapping
+from collections.abc import Collection, Mapping, MutableMapping
 from pathlib import Path
 from typing import Any
 
 from chumak.profile import Profile
 
 _NEST_DELIM = "__"
+_PROFILE_FIELDS = frozenset(Profile.model_fields)
 
 
 class ProfileLoaderError(Exception):
@@ -104,7 +109,10 @@ class ProfileLoader:
         self._env: Mapping[str, str] = env if env is not None else os.environ
 
     def load(self, name: str) -> Profile:
-        merged = self._load_merged(name, _seen=set())
+        # Every discoverable name, so the overlay can tell `child`'s variables
+        # from `child-account`'s.
+        known = {_normalise_for_env(n) for n in self.names()}
+        merged = self._load_merged(name, known=known, _seen=set())
         merged["name"] = name
         return Profile.model_validate(merged)
 
@@ -126,7 +134,9 @@ class ProfileLoader:
     def load_all(self) -> dict[str, Profile]:
         return {name: self.load(name) for name in self.names()}
 
-    def _load_merged(self, name: str, *, _seen: set[str]) -> dict[str, Any]:
+    def _load_merged(
+        self, name: str, *, known: Collection[str], _seen: set[str]
+    ) -> dict[str, Any]:
         if name in _seen:
             chain = " -> ".join([*_seen, name])
             raise ProfileCycleError(f"Profile `extends` cycle detected: {chain}")
@@ -140,7 +150,7 @@ class ProfileLoader:
             )
 
         if parent_name:
-            parent = self._load_merged(parent_name, _seen=_seen)
+            parent = self._load_merged(parent_name, known=known, _seen=_seen)
             merged = _deep_merge(parent, raw)
         else:
             merged = raw
@@ -149,7 +159,9 @@ class ProfileLoader:
             _apply_env_overlay(
                 merged,
                 env=self._env,
-                prefix=f"{self._env_prefix}_PROFILE_{_normalise_for_env(name)}_",
+                prefix=f"{self._env_prefix}_PROFILE_",
+                profile=_normalise_for_env(name),
+                known=known,
             )
 
         merged.pop("name", None)
@@ -188,16 +200,55 @@ def _normalise_for_env(name: str) -> str:
     return name.replace("-", "_").upper()
 
 
+def _env_owner(env_key: str, *, prefix: str, known: Collection[str]) -> str | None:
+    """The normalised profile name `env_key` belongs to, or `None`.
+
+    A profile claims the key when its name follows `prefix` and a field path
+    follows the name. Overlapping names can both claim it (`CHILD` and
+    `CHILD_ACCOUNT` both claim `..._CHILD_ACCOUNT_API_KEY`), so:
+
+    - A claimant whose field path starts with a real `Profile` field wins.
+      This keeps `..._OPENAI_API_KEY` with `openai` when `openai-api` exists.
+    - If none does, the longest name wins, so the unknown field fails
+      validation on the most specific profile rather than being dropped.
+    - If several do, raise: picking one would silently misroute a value.
+    """
+    rest = env_key[len(prefix) :]
+    claimants = [n for n in known if rest.startswith(f"{n}_") and len(rest) > len(n) + 1]
+    if len(claimants) <= 1:
+        return claimants[0] if claimants else None
+    by_field = [n for n in claimants if _starts_with_field(rest[len(n) + 1 :])]
+    if len(by_field) == 1:
+        return by_field[0]
+    if not by_field:
+        return max(claimants, key=len)
+    readings = ", ".join(
+        f"profile {n} field {rest[len(n) + 1 :]}" for n in sorted(by_field, key=len)
+    )
+    raise ProfileLoaderError(
+        f"Env var {env_key} is ambiguous: it reads as {readings}. Rename one of the profiles."
+    )
+
+
+def _starts_with_field(field_path: str) -> bool:
+    head = field_path.split(_NEST_DELIM, 1)[0]
+    return head.lower().replace("-", "_") in _PROFILE_FIELDS
+
+
 def _apply_env_overlay(
     target: MutableMapping[str, Any],
     *,
     env: Mapping[str, str],
     prefix: str,
+    profile: str,
+    known: Collection[str],
 ) -> None:
-    """Walk `env` and overlay any keys starting with `prefix` onto `target`.
+    """Overlay onto `target` every key in `env` that `profile` owns.
 
-    The path after `prefix` is split on `__` for nesting. Each segment is
-    matched case-insensitively against the (possibly nested) dict keys
+    `prefix` ends at `_PROFILE_`; `profile` is the normalised name, and
+    `known` every normalised name that could also claim a key (see
+    `_env_owner`). The path after the name is split on `__` for nesting.
+    Each segment is matched case-insensitively against the (possibly nested) dict keys
     already present in `target`. Segments that don't match an existing key
     create new entries — at the dict level, by introducing a string key
     normalised to lowercase.
@@ -208,13 +259,13 @@ def _apply_env_overlay(
     """
     import json
 
+    known = {*known, profile}  # a candidate even if `names()` can't list it
     for env_key, env_val in env.items():
         if not env_key.startswith(prefix):
             continue
-        suffix = env_key[len(prefix) :]
-        if not suffix:
+        if _env_owner(env_key, prefix=prefix, known=known) != profile:
             continue
-        path = suffix.split(_NEST_DELIM)
+        path = env_key[len(prefix) + len(profile) + 1 :].split(_NEST_DELIM)
         coerced = _coerce_env_value(env_val, json_loads=json.loads)
         _set_nested(target, path, coerced)
 

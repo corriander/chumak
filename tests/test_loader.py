@@ -17,6 +17,7 @@ from chumak.handlers.types import HandlerType, PromptDelivery
 from chumak.loader import (
     ProfileCycleError,
     ProfileLoader,
+    ProfileLoaderError,
     ProfileNotFoundError,
     shared_profiles_dir,
 )
@@ -152,6 +153,79 @@ def test_env_overlay_into_hyphenated_profile_name(write_profile, make_loader) ->
     profile = loader.load("claude-account-b")
     assert profile.api_key is not None
     assert profile.api_key.get_secret_value() == "sk-acct-b"
+
+
+# --- Overlapping profile names -----------------------------------------------
+
+_MINIMAL = 'handler = "langchain"\nmodel = "unused"\n'
+
+
+def _key(profile) -> str | None:
+    return profile.api_key.get_secret_value() if profile.api_key else None
+
+
+def test_longer_name_keeps_its_own_env_vars(write_profile, make_loader) -> None:
+    """ALS-159: `child` must not read `..._CHILD_ACCOUNT_API_KEY` as a field
+    `account_api_key`; that variable belongs to `child-account`."""
+    write_profile("child", _MINIMAL)
+    write_profile("child-account", _MINIMAL)
+    loader = make_loader(
+        env={
+            "TESTAPP_PROFILE_CHILD_API_KEY": "key-child",
+            "TESTAPP_PROFILE_CHILD_ACCOUNT_API_KEY": "key-account",
+        }
+    )
+    assert _key(loader.load("child")) == "key-child"
+    assert _key(loader.load("child-account")) == "key-account"
+
+
+def test_overlapping_names_through_extends(write_profile, make_loader) -> None:
+    """The README's two-account layout: the child extends the shorter name, so
+    the parent's overlay runs while the child loads, too."""
+    write_profile("claude", _MINIMAL)
+    write_profile("claude-account-b", 'extends = "claude"\n')
+    loader = make_loader(env={"TESTAPP_PROFILE_CLAUDE_ACCOUNT_B_API_KEY": "key-b"})
+    assert _key(loader.load("claude")) is None
+    assert _key(loader.load("claude-account-b")) == "key-b"
+
+
+def test_shorter_name_keeps_a_var_only_it_reads_as_a_field(write_profile, make_loader) -> None:
+    """Longest match alone would hand `..._OPENAI_API_KEY` to `openai-api` as
+    an unknown field `key`, and `openai` would silently lose its key."""
+    write_profile("openai", _MINIMAL)
+    write_profile("openai-api", _MINIMAL)
+    loader = make_loader(env={"TESTAPP_PROFILE_OPENAI_API_KEY": "key-openai"})
+    assert _key(loader.load("openai")) == "key-openai"
+    assert _key(loader.load("openai-api")) is None
+
+
+def test_unknown_field_under_overlapping_names_fails_on_the_longer(
+    write_profile, make_loader
+) -> None:
+    """A typo is not dropped: neither reading is a field, so the most specific
+    profile takes it and fails validation."""
+    write_profile("child", _MINIMAL)
+    write_profile("child-account", _MINIMAL)
+    loader = make_loader(env={"TESTAPP_PROFILE_CHILD_ACCOUNT_API_KY": "x"})
+    assert _key(loader.load("child")) is None
+    with pytest.raises(ValidationError, match="api_ky"):
+        loader.load("child-account")
+
+
+def test_two_field_readings_raise_rather_than_guess(
+    write_profile, make_loader, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No current pair of fields allows this (it needs fields `f` and `x_f`), so
+    fake one: with a `kwargs` field, `..._A_MODEL_KWARGS__X` would fit both."""
+    import chumak.loader
+
+    monkeypatch.setattr(chumak.loader, "_PROFILE_FIELDS", {"model_kwargs", "kwargs"})
+    write_profile("a", _MINIMAL)
+    write_profile("a-model", _MINIMAL)
+    loader = make_loader(env={"TESTAPP_PROFILE_A_MODEL_KWARGS__X": "1"})
+    for name in ("a", "a-model"):
+        with pytest.raises(ProfileLoaderError, match="ambiguous"):
+            loader.load(name)
 
 
 def test_empty_file_can_be_fully_env_driven(write_profile, make_loader) -> None:
