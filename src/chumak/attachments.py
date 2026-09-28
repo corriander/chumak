@@ -39,10 +39,15 @@ def digest_bytes(data: bytes, *, mime: str) -> AttachmentDigest:
 class Attachment(BaseModel):
     """A local image file to send alongside the prompt.
 
-    `mime` is sniffed from the file extension when omitted. Only ``image/*``
-    types are accepted; anything else is rejected at validation, before any
-    handler sees it. Frozen, so the validated MIME cannot be swapped for a
-    non-image one after construction.
+    `mime` is sniffed from the file extension when omitted, via `mimetypes`.
+    That reads the machine's own type tables (the Windows registry,
+    `/etc/mime.types`) as well as Python's built-in one, and theirs take
+    precedence. Common image extensions are stable in practice, but a less
+    common one can sniff differently, or not at all, on another machine.
+    Pass `mime=` explicitly when the recorded type must not vary. Only
+    ``image/*`` types are accepted; anything else is rejected at validation,
+    before any handler sees it. Frozen, so the validated MIME cannot be
+    swapped for a non-image one after construction.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -83,4 +88,13 @@ class Attachment(BaseModel):
         return Path(self.path).read_bytes()
 
     def digest(self) -> AttachmentDigest:
+        """Hash the file as it is on disk now.
+
+        This is a fresh read. If you read the file to send it and then call
+        this, a change in between leaves a digest that doesn't match what the
+        model saw. When the file might change, hash the bytes you sent:
+        `AttachmentDigest(sha256=hashlib.sha256(data).hexdigest(), mime=a.media_type)`.
+        `infer()` doesn't have this problem: the langchain handler hashes the
+        buffer it sends.
+        """
         return digest_bytes(self.read_bytes(), mime=self.media_type)

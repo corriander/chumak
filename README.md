@@ -285,7 +285,11 @@ profile already take images by path reference in the prompt (`@{path}`), and tha
 remains the idiom there; `systemone` takes a text state only. Each attachment's SHA-256
 and MIME land in `meta.produced_by.attachments`; `prompt_actual_sha256` still covers the
 text alone. If you make the call yourself (see "Orchestrate your own loop"), pass
-`attachments=[a.digest() for a in ...]` to `build_meta` to get the same record.
+`attachments=[a.digest() for a in ...]` to `build_meta` to get the same record. Note
+that `digest()` reads the file again, so if it can change between sending and hashing,
+hash the bytes you actually sent instead (see the `Attachment.digest()` docstring).
+The MIME sniff reads the machine's own type tables too; pass `mime=` explicitly when the
+recorded type must not vary between machines.
 
 ### With provenance
 
