@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.6.0](https://github.com/corriander/chumak/compare/v0.5.0...v0.6.0) (2026-09-29)
+
+
+### Features
+
+* **loader:** default shared profiles to the platform config folder on Windows and macOS ([#66](https://github.com/corriander/chumak/issues/66)) ([6f8e3f4](https://github.com/corriander/chumak/commit/6f8e3f464ec523d911f9f3c9e5afe2112b133d12))
+* **subprocess:** pass image attachments to CLIs by path reference ([#68](https://github.com/corriander/chumak/issues/68)) ([d03709d](https://github.com/corriander/chumak/commit/d03709d910f0d2aea85f23d5d356b7d7a911d422))
+
+
+### Bug Fixes
+
+* check handlers report one digest per attachment ([#67](https://github.com/corriander/chumak/issues/67)) ([1e24101](https://github.com/corriander/chumak/commit/1e24101c3299d11e38a8ba1a8e54fba7b1791327))
+* **loader:** give each env overlay variable to exactly one profile ([#63](https://github.com/corriander/chumak/issues/63)) ([29d92c5](https://github.com/corriander/chumak/commit/29d92c547cd3673301ad402c66edd6ed5b45bfb3))
+* **systemone:** refuse a profile that belongs to another handler ([#61](https://github.com/corriander/chumak/issues/61)) ([5df5876](https://github.com/corriander/chumak/commit/5df587640e6c16475e413523d94ff6ac06edc14a))
+
+
+### Documentation
+
+* note digest() re-reads the file and MIME sniffing varies ([#62](https://github.com/corriander/chumak/issues/62)) ([912c7a6](https://github.com/corriander/chumak/commit/912c7a6b2fc34fbade679209f44c96eb9eb3a2ff))
+
 ## [0.5.0](https://github.com/corriander/chumak/compare/v0.4.0...v0.5.0) (2026-09-26)
 
 
