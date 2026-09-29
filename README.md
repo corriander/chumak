@@ -29,6 +29,8 @@ Three built-in handlers:
   Useful for prompt iteration via an existing, authorised tool.
   Schema is injected into the prompt as JSON Schema; stdout is parsed and validated.
   Requires an `output_schema` — untyped generation is a langchain-handler capability.
+  Takes image attachments only if the profile says how its CLI references a file (see
+  "With an image").
 - **`systemone`** — ⚠️ **experimental.** Calls TypeSafe's System One decision model
   (Jev). Unlike the other two this is not a text generator: it answers *typed
   questions* about a state and returns calibrated probabilities. See below.
@@ -283,13 +285,10 @@ result = infer(
 result.meta.produced_by.attachments  # -> [AttachmentDigest(sha256=..., mime="image/png")]
 ```
 
-Attachments are **langchain-handler only**: they become one multimodal message (text
-part + base64 image parts) that LangChain translates to the provider's native shape, so
+On a `langchain` profile, attachments become one multimodal message (text part + base64
+image parts) that LangChain translates to the provider's native shape, so
 `anthropic:*`, `openai:*`, and `openai:*` + `base_url` (local OpenAI-compatible servers)
-all work. Image MIME types only, local paths only. The other handlers raise
-`ProfileCapabilityError` rather than drop the images: agent CLIs behind a `subprocess`
-profile already take images by path reference in the prompt (`@{path}`), and that
-remains the idiom there; `systemone` takes a text state only. Each attachment's SHA-256
+all work. Image MIME types only, local paths only. Each attachment's SHA-256
 and MIME land in `meta.produced_by.attachments`; `prompt_actual_sha256` still covers the
 text alone. If you make the call yourself (see "Orchestrate your own loop"), pass
 `attachments=[a.digest() for a in ...]` to `build_meta` to get the same record. Note
@@ -297,6 +296,36 @@ that `digest()` reads the file again, so if it can change between sending and ha
 hash the bytes you actually sent instead (see the `Attachment.digest()` docstring).
 The MIME sniff reads the machine's own type tables too; pass `mime=` explicitly when the
 recorded type must not vary between machines.
+
+A `systemone` profile takes a text state only, and raises `ProfileCapabilityError`
+rather than drop the images.
+
+#### On a subprocess profile
+
+A CLI can't be handed image bytes the way an API can. The CLIs that read images take a
+file path in the prompt, each in its own syntax. Tell chumak that syntax with
+`attachment_ref`, a template in which `{path}` stands for the file's absolute path:
+
+```toml
+handler = "subprocess"
+model = "llava"
+command = "ollama run llava:latest --format json"
+prompt_delivery = "stdin"
+attachment_ref = "{path}"  # `ollama run` picks an image path out of the prompt
+```
+
+chumak writes one reference per attachment after your prompt, each on its own line and
+in order, ahead of the schema instructions. `{path}` is replaced as is, with no quoting
+or escaping, so put any quoting your CLI needs for awkward paths into the template.
+Without `attachment_ref`, a subprocess profile raises `ProfileCapabilityError` rather
+than drop the images. CLIs that take images as command-line flags instead aren't
+covered.
+
+The digests land in `meta.produced_by.attachments_referenced`, not `attachments`,
+because the guarantee is weaker. chumak hashes each file as it writes the prompt, but
+only the CLI reads it, so nothing confirms that it did, or that it read the same bytes.
+The references are part of the text sent, so `prompt_actual_sha256` covers them,
+absolute paths included.
 
 ### With provenance
 

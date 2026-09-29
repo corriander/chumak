@@ -9,10 +9,18 @@ The profile shape stays minimal: a verbatim `command` (parsed via
 timeout. Output is expected as JSON on stdout, optionally wrapped in a
 fenced code block.
 
-Attachments are rejected. Agent CLIs already carry images by path reference
-inside the prompt (``@{path}``, expanded by the CLI) — that is the subprocess
-idiom, and merging it with the API-style attachment convention would be
-confusing. Revisit if a consumer asks.
+Attachments are opt-in per profile. CLIs that read images take them as a
+file path written into the prompt, and each spells that reference its own
+way, so the profile's `attachment_ref` template says how (`{path}` for
+`ollama run`). With it set, the handler writes one reference per attachment
+after the caller's prompt, each on its own line, in order, and ahead of the
+schema instructions. Without it, attachments are rejected rather than
+dropped. CLIs that take images as argv flags instead aren't covered.
+
+A reference is not a send: chumak never sees what the CLI reads. So the
+handler hashes each file as it renders the prompt, and reports the digests
+as `attachments_referenced`, not `attachments`. A file it can't read fails
+the call before anything is spawned.
 """
 
 from __future__ import annotations
@@ -23,11 +31,12 @@ import shlex
 import subprocess
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
-from chumak.attachments import Attachment
+from chumak.attachments import Attachment, AttachmentDigest
 from chumak.errors import ProfileCapabilityError
 from chumak.handlers.base import HandlerResult
 from chumak.handlers.types import PromptDelivery
@@ -46,16 +55,45 @@ class SubprocessRaw:
     stderr: str
 
 
-def _build_subprocess_prompt(prompt: str, output_schema: type[BaseModel]) -> str:
+def _build_subprocess_prompt(
+    prompt: str, output_schema: type[BaseModel], references: Sequence[str] = ()
+) -> str:
     if not (isinstance(output_schema, type) and issubclass(output_schema, BaseModel)):
         raise TypeError("output_schema must be a Pydantic BaseModel subclass")
     schema_json = json.dumps(output_schema.model_json_schema(), indent=2)
+    # No references, no change: a text-only call renders, and hashes, exactly
+    # as it did before attachments existed.
+    body = "\n\n".join([prompt, "\n".join(references)]) if references else prompt
     return (
-        f"{prompt}\n\n"
+        f"{body}\n\n"
         "Respond with a single JSON object matching the following JSON Schema. "
         "Do not include prose, code fences, or commentary outside the JSON.\n\n"
         f"```json\n{schema_json}\n```\n"
     )
+
+
+def _reference_attachments(
+    attachments: Sequence[Attachment], template: str
+) -> tuple[list[str], list[AttachmentDigest]]:
+    """Render one reference per attachment, and hash each file.
+
+    Paths are made absolute, since the CLI's working directory is the
+    caller's and may not be where the attachment was named from.
+    """
+    references: list[str] = []
+    digests: list[AttachmentDigest] = []
+    for attachment in attachments:
+        path = str(Path(attachment.path).absolute())
+        # Each reference gets a line of its own; a path that breaks the line
+        # would split it into text the CLI doesn't read as a reference.
+        if "\n" in path or "\r" in path:
+            raise ValueError(
+                f"Attachment path {path!r} contains a line break, so it can't be written "
+                "into the prompt as a reference"
+            )
+        references.append(template.replace("{path}", path))
+        digests.append(attachment.digest())
+    return references, digests
 
 
 def _extract_json(stdout: str) -> str:
@@ -83,11 +121,11 @@ class SubprocessHandler:
             raise ProfileCapabilityError(
                 f"SubprocessHandler called with non-subprocess profile {profile.name!r}"
             )
-        if attachments:
+        if attachments and profile.attachment_ref is None:
             raise ProfileCapabilityError(
-                f"SubprocessHandler does not accept attachments (profile {profile.name!r}, "
-                f"{len(attachments)} given): reference image paths in the prompt using the "
-                "CLI's own idiom (e.g. `@{path}`); attachments are a langchain-handler capability"
+                f"Subprocess profile {profile.name!r} does not accept attachments "
+                f"({len(attachments)} given): set `attachment_ref` to the template its CLI "
+                "uses to reference a file in the prompt (e.g. `{path}` for `ollama run`)"
             )
         if output_schema is None:
             # The subprocess contract *is* the injected JSON Schema: without one
@@ -101,7 +139,12 @@ class SubprocessHandler:
         assert profile.command is not None
         assert profile.prompt_delivery is not None
 
-        full_prompt = _build_subprocess_prompt(prompt, output_schema)
+        references: list[str] = []
+        digests: list[AttachmentDigest] = []
+        if attachments:
+            assert profile.attachment_ref is not None
+            references, digests = _reference_attachments(attachments, profile.attachment_ref)
+        full_prompt = _build_subprocess_prompt(prompt, output_schema, references)
         argv = shlex.split(profile.command)
         proc = self._run(argv, full_prompt, profile.prompt_delivery, profile.timeout)
 
@@ -137,6 +180,7 @@ class SubprocessHandler:
                 stderr=proc.stderr,
             ),
             rendered_prompt=full_prompt,
+            attachments_referenced=digests,
         )
 
     def _run(

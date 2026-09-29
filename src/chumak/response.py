@@ -109,6 +109,15 @@ class ProducedBy(BaseModel):
             "Empty for text-only calls. `prompt_actual_sha256` covers the text only."
         ),
     )
+    attachments_referenced: list[AttachmentDigest] = Field(
+        default_factory=list,
+        description=(
+            "Digest of each attachment passed to the transport as a path in the prompt "
+            "(a subprocess profile's `attachment_ref`), in order. A weaker guarantee "
+            "than `attachments`: chumak hashed the file as it rendered the prompt, but "
+            "can't tell whether the CLI read it, or read the same bytes."
+        ),
+    )
 
 
 class Meta(BaseModel):

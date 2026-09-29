@@ -32,12 +32,15 @@ def infer(
     Arguments:
         prompt: Verbatim prompt text. The library does no templating.
         attachments: Optional images to send alongside the prompt (see
-            `Attachment`). Supported by the langchain handler, which builds
-            a multimodal message; the subprocess handler rejects them (use
-            the CLI's own path-reference idiom in the prompt instead). Each
-            attachment's digest lands in `meta.produced_by.attachments`; if
-            the handler reports a different number of digests, `infer()`
-            raises `RuntimeError` rather than record the call wrongly.
+            `Attachment`). The langchain handler sends them in a multimodal
+            message, and their digests land in
+            `meta.produced_by.attachments`. A subprocess profile takes them
+            only if it sets `attachment_ref`: the handler writes each path
+            into the prompt, and their digests land in
+            `meta.produced_by.attachments_referenced` instead. Other
+            handlers reject them. If the handler reports a different number
+            of digests, `infer()` raises `RuntimeError` rather than record
+            the call wrongly.
         output_schema: Optional Pydantic `BaseModel` subclass. When given, the
             handler returns a validated instance of it in `result.payload`.
             When omitted (``None``), the call is untyped: `result.payload` is
@@ -63,7 +66,7 @@ def infer(
     )
     # A handler that sent images but reported no digests would leave a record
     # that reads as a text-only call. The count is all that can be checked.
-    reported = len(handler_result.attachments)
+    reported = len(handler_result.attachments) + len(handler_result.attachments_referenced)
     if reported != len(attachments):
         raise RuntimeError(
             f"{handler_cls.__name__} reported {reported} attachment digest(s) for "
@@ -78,6 +81,7 @@ def infer(
         prompt=handler_result.rendered_prompt,
         provenance=provenance,
         attachments=handler_result.attachments,
+        attachments_referenced=handler_result.attachments_referenced,
     )
     return InferResult(
         payload=handler_result.payload,

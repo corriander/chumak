@@ -76,9 +76,18 @@ prove the wire format and auth still match the vendor's API.
 > output but **request and response bodies are not**. Pin `TYPESAFE_LOG_LEVEL` before
 > sending anything sensitive through it.
 
-#### Why no subprocess live test?
+### Integration test — subprocess attachments against a vision CLI
 
-The subprocess handler is harder to gate (each CLI has its own auth / install requirements). Cover it with unit tests against a temporary script (`tests/test_subprocess_handler.py` does this), and rely on downstream consumers for true end-to-end exercise.
+Marker-gated *and* command-gated: skipped unless `--integration` is passed **and** `CHUMAK_TEST_SUBPROCESS_VISION_COMMAND` names a vision-capable CLI that reads image paths from its prompt. It checks that a real CLI finds and reads the files an `attachment_ref` profile references, one call per swatch colour. With Ollama serving and `llava` pulled:
+
+```bash
+CHUMAK_TEST_SUBPROCESS_VISION_COMMAND="ollama run llava:latest --format {schema}" \
+  uv run pytest --integration tests/test_subprocess_live.py -v
+```
+
+`{schema}` becomes the test schema's JSON Schema, and Ollama constrains the reply to it. Plain `--format json` also runs, but llava often echoes the schema's `properties` wrapper back and fails validation. Set `CHUMAK_TEST_SUBPROCESS_ATTACHMENT_REF` for a CLI whose reference syntax isn't the bare path (default `{path}`).
+
+The rest of the subprocess handler is covered by unit tests that stub the process (`tests/test_subprocess_handler.py`). Each CLI has its own install and auth requirements, so a live test for any particular one stays opt-in like this.
 
 ## Quality checks
 
@@ -94,7 +103,7 @@ All three must pass clean. CI will run the same.
 
 ## Adding a handler
 
-1. Module under `src/chumak/handlers/<name>.py` exporting a class with `execute(prompt, output_schema, profile, attachments=()) -> HandlerResult`. Take the `attachments` parameter even in a text-only handler: the `Handler` protocol that types `HANDLER_REGISTRY` requires it, so `ty check` rejects the registration without it. A handler that cannot send images must raise `ProfileCapabilityError` for a non-empty value, never drop them. One that sends them must report one digest per attachment, in order, in `HandlerResult.attachments`; `infer()` raises if the count is off.
+1. Module under `src/chumak/handlers/<name>.py` exporting a class with `execute(prompt, output_schema, profile, attachments=()) -> HandlerResult`. Take the `attachments` parameter even in a text-only handler: the `Handler` protocol that types `HANDLER_REGISTRY` requires it, so `ty check` rejects the registration without it. A handler that cannot send images must raise `ProfileCapabilityError` for a non-empty value, never drop them. One that carries them must report one digest per attachment, in order: in `HandlerResult.attachments` when it sends the bytes, or in `attachments_referenced` when it only passes a path (the transport's read can't be confirmed). `infer()` raises if the count is off.
 2. Add the discriminator to `HandlerType` in `src/chumak/handlers/types.py`.
 3. Register the class in `HANDLER_REGISTRY` (`src/chumak/handlers/__init__.py`).
 4. If the handler needs new profile fields, add them to `Profile` with the validator enforcing mutually-exclusive field sets per handler.

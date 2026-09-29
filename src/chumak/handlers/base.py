@@ -12,15 +12,22 @@ chat model, a CLI subprocess, …) and returns:
     handlers). The meta builder hashes this for
     `produced_by.prompt_actual_sha256`.
   - `attachments`: digests of the attachments the handler actually sent,
-    one per attachment, in order, stamped into `produced_by.attachments`.
-    Empty for text-only calls.
+    in order, stamped into `produced_by.attachments`. Empty for text-only
+    calls.
+  - `attachments_referenced`: digests of the attachments the handler passed
+    by reference (a path in the prompt) rather than sent, in order, stamped
+    into `produced_by.attachments_referenced`. Kept apart from
+    `attachments` because they promise less: the handler hashed the file,
+    but it can't observe whether the transport read it, or read the same
+    bytes.
 
 Attachment support is a per-handler capability, but the parameter is not:
 every handler takes `attachments`, as the `Handler` protocol (and so
 `HANDLER_REGISTRY`'s type) requires. A handler that cannot carry them must
-reject a non-empty value loudly rather than drop them. A handler that sends
-them must report a digest for each; `infer()` raises when the count doesn't
-match, rather than record an image call as text-only.
+reject a non-empty value loudly rather than drop them. A handler that
+carries them must report a digest for each, in whichever of the two lists
+fits; `infer()` raises when the total doesn't match, rather than record an
+image call as text-only.
 
 `infer()` still passes the keyword only when there are attachments. That is
 a safety net for a handler registered from outside this package before
@@ -61,6 +68,13 @@ class HandlerResult(BaseModel):
     attachments: list[AttachmentDigest] = Field(
         default_factory=list,
         description="Digests of the attachments actually sent, in order.",
+    )
+    attachments_referenced: list[AttachmentDigest] = Field(
+        default_factory=list,
+        description=(
+            "Digests of the attachments passed by reference rather than sent, in order, "
+            "hashed by the handler before dispatch."
+        ),
     )
 
 
