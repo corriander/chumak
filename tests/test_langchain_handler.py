@@ -297,3 +297,43 @@ def test_multiple_attachments_keep_order(monkeypatch: pytest.MonkeyPatch, tmp_pa
         hashlib.sha256(red.read_bytes()).hexdigest(),
         hashlib.sha256(blue.read_bytes()).hexdigest(),
     ]
+
+
+def test_attachment_translates_to_anthropic_image_source(
+    monkeypatch: pytest.MonkeyPatch, red_png: Path
+) -> None:
+    """The message the handler builds comes out of langchain-anthropic as an
+    Anthropic base64 ``source`` block. No network: this stops at the request
+    payload, so it pins the translation across langchain-anthropic upgrades.
+    """
+    anthropic = pytest.importorskip("langchain_anthropic")
+    model = _FakeModel(text="a red square")
+    monkeypatch.setattr("chumak.handlers.langchain.init_chat_model", lambda m, **k: model)
+    LangChainHandler().execute(
+        prompt="What colour is this?",
+        output_schema=None,
+        profile=_profile(),
+        attachments=[Attachment(path=red_png)],
+    )
+
+    # Private, but it is the one place the provider's request shape is exposed.
+    request = anthropic.ChatAnthropic(
+        model="claude-haiku-4-5", api_key="sk-ant-unused"
+    )._get_request_payload(model.last_input)
+
+    assert request["messages"] == [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "What colour is this?"},
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/png",
+                        "data": base64.b64encode(red_png.read_bytes()).decode("ascii"),
+                    },
+                },
+            ],
+        }
+    ]

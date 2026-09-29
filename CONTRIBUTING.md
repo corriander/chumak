@@ -51,6 +51,37 @@ The test uses a tiny `ColourTag { colour: str, is_warm: bool }` schema — small
 
 The attachment test (`test_langchain_handler_with_image_attachment`) sends a generated solid-red PNG and needs a **vision-capable** model. Point `CHUMAK_TEST_OPENAI_VISION_MODEL` at one (e.g. a `qwen2.5-vl` / `llava` served by llama.cpp or vLLM); it falls back to `CHUMAK_TEST_OPENAI_MODEL` when unset. The PNG comes from the `red_png` fixture (`solid_png` in `tests/conftest.py`) — no imaging library needed.
 
+With [Ollama](https://ollama.com), which serves its OpenAI-compatible API under `/v1`:
+
+```bash
+ollama pull llava
+ollama serve                                          # if it isn't already running
+CHUMAK_TEST_OPENAI_URL=http://localhost:11434/v1 \
+CHUMAK_TEST_OPENAI_VISION_MODEL=llava:latest \
+  uv run pytest --integration \
+    tests/test_langchain_live.py::test_langchain_handler_with_image_attachment -v
+```
+
+### Integration test — LangChain handler against Anthropic
+
+Marker-gated *and* key-gated: skipped unless `--integration` is passed **and**
+`CHUMAK_TEST_ANTHROPIC_API_KEY` is set. It reads that variable rather than
+`ANTHROPIC_API_KEY` on purpose, so a key already in your environment can't spend
+money by accident. This proves image attachments survive the langchain-anthropic
+translation: it sends a solid-red and a solid-blue PNG and checks that the answer
+changes with the image.
+
+```bash
+uv sync --extra anthropic                             # already in the dev group
+CHUMAK_TEST_ANTHROPIC_API_KEY=sk-ant-... \
+  uv run pytest --integration tests/test_anthropic_live.py -v
+```
+
+`CHUMAK_TEST_ANTHROPIC_MODEL` overrides the model (default `claude-haiku-4-5`). The
+translation itself is also pinned hermetically in `tests/test_langchain_handler.py`,
+which runs chumak's message through langchain-anthropic's request formatting with no
+network call.
+
 ### Integration test — System One handler against TypeSafe (experimental)
 
 Marker-gated *and* key-gated: skipped unless `--integration` is passed **and**
