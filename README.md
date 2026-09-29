@@ -189,6 +189,13 @@ This means a profile file can be effectively empty on disk (just declaring the
 profile's existence and maybe an `extends`), with all values supplied by the
 environment. You decide which fields are sensitive and never touch disk.
 
+When one profile's name starts with another's, as `claude-account-b` does with
+`claude`, a variable can fit both. Each one goes to a single profile: the one whose
+field part names a real field (`API_KEY` for `claude-account-b`, not
+`ACCOUNT_B_API_KEY` for `claude`), otherwise the longer name. If both parts name real
+fields, loading either of those profiles raises `ProfileLoaderError` rather than
+guess; other profiles still load.
+
 ### API keys
 
 A profile's credential is its top-level `api_key` field, held as a pydantic
