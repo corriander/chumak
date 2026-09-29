@@ -7,9 +7,12 @@ exercise each layer independently and together.
 
 from __future__ import annotations
 
+import os
+import sys
 import textwrap
 from pathlib import Path
 
+import platformdirs
 import pytest
 from pydantic import ValidationError
 
@@ -332,20 +335,82 @@ def test_load_all(write_profile, make_loader, claude_base_body) -> None:
 # --- shared_profiles_dir ----------------------------------------------------
 
 
-def test_shared_profiles_dir_follows_xdg_config_home(tmp_path: Path) -> None:
+@pytest.fixture
+def config_homes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
+    """Point `~` and the Windows config folder at per-test folders, so no
+    test reads, or creates, the real ones. Returns `(home, appdata)`."""
+    home = tmp_path / "home"
+    appdata = tmp_path / "appdata"
+    monkeypatch.setenv("HOME", str(home))  # Path.home() on POSIX
+    monkeypatch.setenv("USERPROFILE", str(home))  # ... and on Windows
+    monkeypatch.setattr(platformdirs, "user_config_path", lambda appname, **_: appdata / appname)
+    return home, appdata
+
+
+@pytest.mark.parametrize("platform", ["linux", "darwin"])
+def test_shared_profiles_dir_follows_xdg_config_home(
+    platform: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(sys, "platform", platform)
     env = {"XDG_CONFIG_HOME": str(tmp_path)}
     assert shared_profiles_dir(env) == tmp_path / "chumak" / "profiles"
 
 
 @pytest.mark.parametrize("xdg", [None, "", "relative/config"])
-def test_shared_profiles_dir_falls_back_to_home_config(xdg: str | None) -> None:
+def test_shared_profiles_dir_falls_back_to_home_config(
+    xdg: str | None, config_homes: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Unset, empty and relative values all fall back; the XDG spec says to
     ignore a relative `XDG_CONFIG_HOME`."""
+    monkeypatch.setattr(sys, "platform", "linux")
+    home, _ = config_homes
     env = {} if xdg is None else {"XDG_CONFIG_HOME": xdg}
-    assert shared_profiles_dir(env) == Path.home() / ".config" / "chumak" / "profiles"
+    assert shared_profiles_dir(env) == home / ".config" / "chumak" / "profiles"
 
 
-def test_app_dir_shadows_shared_and_shared_fills_gaps(tmp_path: Path) -> None:
+@pytest.mark.parametrize("xdg", [None, "xdg"])
+def test_windows_defaults_to_platform_config_dir(
+    xdg: str | None,
+    config_homes: tuple[Path, Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With no `chumak` folder in the XDG location, `%APPDATA%` is used, even
+    when `XDG_CONFIG_HOME` is set."""
+    monkeypatch.setattr(sys, "platform", "win32")
+    _, appdata = config_homes
+    env = {} if xdg is None else {"XDG_CONFIG_HOME": str(tmp_path / xdg)}
+    assert shared_profiles_dir(env) == appdata / "chumak" / "profiles"
+
+
+@pytest.mark.parametrize("xdg", [None, "xdg"])
+def test_windows_uses_an_existing_xdg_chumak_folder(
+    xdg: str | None,
+    config_homes: tuple[Path, Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The `chumak` folder alone decides, not `profiles` inside it, and it
+    wins over an existing `%APPDATA%\\chumak`: the two are never mixed."""
+    monkeypatch.setattr(sys, "platform", "win32")
+    home, appdata = config_homes
+    env = {} if xdg is None else {"XDG_CONFIG_HOME": str(tmp_path / xdg)}
+    base = home / ".config" if xdg is None else tmp_path / xdg
+    (base / "chumak").mkdir(parents=True)
+    (appdata / "chumak" / "profiles").mkdir(parents=True)
+
+    assert shared_profiles_dir(env) == base / "chumak" / "profiles"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="asks Windows for the real folder")
+def test_windows_platform_config_dir_is_roaming_appdata(tmp_path: Path) -> None:
+    """Pins the `platformdirs` arguments: roaming, not local, and no doubled
+    `chumak\\chumak` from a defaulted app author."""
+    env = {"XDG_CONFIG_HOME": str(tmp_path)}
+    assert shared_profiles_dir(env) == Path(os.environ["APPDATA"]) / "chumak" / "profiles"
+
+
+def test_app_dir_shadows_shared_and_shared_fills_gaps(tmp_path: Path, config_homes) -> None:
     """The documented opt-in: app dir first, shared dir second."""
     app_dir = tmp_path / "app"
     app_dir.mkdir()
@@ -361,7 +426,9 @@ def test_app_dir_shadows_shared_and_shared_fills_gaps(tmp_path: Path) -> None:
     assert loader.load("claude").model == "anthropic:app"
 
 
-def test_missing_shared_dir_is_harmless(write_profile, profile_dir, claude_base_body) -> None:
+def test_missing_shared_dir_is_harmless(
+    write_profile, profile_dir, claude_base_body, config_homes
+) -> None:
     write_profile("claude", claude_base_body)
     missing = shared_profiles_dir({"XDG_CONFIG_HOME": str(profile_dir / "nowhere")})
 
