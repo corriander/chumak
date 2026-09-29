@@ -58,7 +58,8 @@ ollama pull llava
 ollama serve                                          # if it isn't already running
 CHUMAK_TEST_OPENAI_URL=http://localhost:11434/v1 \
 CHUMAK_TEST_OPENAI_VISION_MODEL=llava:latest \
-  uv run pytest --integration tests/test_langchain_live.py -v
+  uv run pytest --integration \
+    tests/test_langchain_live.py::test_langchain_handler_with_image_attachment -v
 ```
 
 ### Integration test — LangChain handler against Anthropic
