@@ -12,10 +12,11 @@ fenced code block.
 Attachments are opt-in per profile. CLIs that read images take them as a
 file path written into the prompt, and each spells that reference its own
 way, so the profile's `attachment_ref` template says how (`{path}` for
-`ollama run`). With it set, the handler writes one reference per attachment
-after the caller's prompt, each on its own line, in order, and ahead of the
-schema instructions. Without it, attachments are rejected rather than
-dropped. CLIs that take images as argv flags instead aren't covered.
+`ollama run`, `@{path}` for `claude -p`). With it set, the handler writes
+one reference per attachment after the caller's prompt, each on its own
+line, in order, and ahead of the schema instructions. Without it,
+attachments are rejected rather than dropped. CLIs that take images as argv
+flags instead aren't covered.
 
 A reference is not a send: chumak never sees what the CLI reads. So the
 handler hashes each file as it renders the prompt, and reports the digests
@@ -125,7 +126,7 @@ class SubprocessHandler:
             raise ProfileCapabilityError(
                 f"Subprocess profile {profile.name!r} does not accept attachments "
                 f"({len(attachments)} given): set `attachment_ref` to the template its CLI "
-                "uses to reference a file in the prompt (e.g. `{path}` for `ollama run`)"
+                "uses to reference a file in the prompt (e.g. `@{path}` for `claude -p`)"
             )
         if output_schema is None:
             # The subprocess contract *is* the injected JSON Schema: without one

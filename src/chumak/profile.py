@@ -87,9 +87,10 @@ class Profile(BaseModel):
         description=(
             "Subprocess profiles only. How the CLI references a file in its prompt: "
             "a template in which `{path}` stands for an attachment's absolute path, "
-            "e.g. `{path}` for `ollama run`. Setting it lets the profile take "
-            "attachments; unset, they are rejected. `{path}` is replaced literally, "
-            "with no quoting or escaping, and is the only placeholder allowed."
+            "e.g. `{path}` for `ollama run`, `@{path}` for `claude -p`. Setting it "
+            "lets the profile take attachments; unset, they are rejected. `{path}` "
+            "is replaced literally, with no quoting or escaping, and is the only "
+            "placeholder allowed."
         ),
     )
 

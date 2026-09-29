@@ -308,11 +308,14 @@ file path in the prompt, each in its own syntax. Tell chumak that syntax with
 
 ```toml
 handler = "subprocess"
-model = "llava"
-command = "ollama run llava:latest --format json"
+model = "claude-haiku-4-5"
+command = "claude -p --model haiku"
 prompt_delivery = "stdin"
-attachment_ref = "{path}"  # `ollama run` picks an image path out of the prompt
+attachment_ref = "@{path}"  # Claude Code's file reference
 ```
+
+For `ollama run`, which picks bare image paths out of the prompt, it's
+`attachment_ref = "{path}"`.
 
 chumak writes one reference per attachment after your prompt, each on its own line and
 in order, ahead of the schema instructions. `{path}` is replaced as is, with no quoting

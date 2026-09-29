@@ -13,11 +13,15 @@ quoted as one argument. Ollama then constrains the reply to it; with plain
 `--format json`, llava often echoes the schema's `properties` wrapper back,
 and the call fails validation. `CHUMAK_TEST_SUBPROCESS_ATTACHMENT_REF` sets
 the reference template (default `{path}`, which `ollama run` picks up). The
-prompt goes in on stdin.
+prompt goes in on stdin. For Claude Code:
+
+    CHUMAK_TEST_SUBPROCESS_VISION_COMMAND="claude -p --model haiku" \\
+    CHUMAK_TEST_SUBPROCESS_ATTACHMENT_REF="@{path}" \\
+        uv run pytest --integration tests/test_subprocess_live.py -v
 
 Each colour gets its own call, and neither the prompt nor the path names the
 colour. Blind, llava answers "red", so green and blue are what show it read
-the image.
+the image; `claude -p` says it sees no image.
 """
 
 from __future__ import annotations
