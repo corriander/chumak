@@ -49,8 +49,9 @@ def build_meta(
             verbatim. `None` records no hash. Pass it when the sent text is
             unknown, and for a multi-turn call, which sends a list of
             messages rather than one string: chumak defines no hash for a
-            conversation. If a consumer needs one, this parameter could
-            widen to take the messages and hash a canonical serialisation.
+            conversation. If a consumer needs one, it belongs in a separate,
+            versioned field over a canonical serialisation of the messages,
+            not here: `prompt_actual_sha256` only ever hashes one string.
         provenance: Optional artefact identifiers and upstream references.
         attachments: Digests of the attachments sent with `prompt`, in order
             (`Attachment.digest()` for a call made outside `infer()`).
