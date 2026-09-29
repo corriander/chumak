@@ -165,7 +165,7 @@ def _key(profile) -> str | None:
 
 
 def test_longer_name_keeps_its_own_env_vars(write_profile, make_loader) -> None:
-    """ALS-159: `child` must not read `..._CHILD_ACCOUNT_API_KEY` as a field
+    """`child` must not read `..._CHILD_ACCOUNT_API_KEY` as a field
     `account_api_key`; that variable belongs to `child-account`."""
     write_profile("child", _MINIMAL)
     write_profile("child-account", _MINIMAL)
