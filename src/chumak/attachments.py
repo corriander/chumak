@@ -7,11 +7,12 @@ file; the langchain handler turns it into a multimodal message part, and
 its digest is stamped into `Meta.produced_by.attachments` so the call stays
 auditable without storing the bytes.
 
-v1 scope: filesystem paths, image MIME types only. The subprocess handler
-does not accept attachments — agent CLIs already have their own
-path-reference idiom (``@{path}`` in the prompt) and merging the two
-conventions silently would be confusing. The systemone handler does not
-either: its input is a text state.
+v1 scope: filesystem paths, image MIME types only. A subprocess profile
+takes attachments only if it sets `attachment_ref`: the handler then
+writes each path into the prompt in its CLI's syntax, and records the
+digest under `attachments_referenced`, since it can't observe what the CLI
+reads (see `chumak.handlers.subprocess`). The systemone handler does not
+take them at all: its input is a text state.
 
 Leaf module — depends only on pydantic and the standard library.
 """

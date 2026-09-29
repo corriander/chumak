@@ -98,6 +98,18 @@ def test_infer_stamps_handler_attachment_digests_into_meta(stub_handler, red_png
     assert result.meta.produced_by.attachments == [digest]
 
 
+def test_infer_counts_referenced_digests_and_records_them_apart(stub_handler, red_png) -> None:
+    digest = AttachmentDigest(sha256="ab" * 32, mime="image/png")
+    stub_handler(
+        HandlerResult(payload="red", rendered_prompt="what", attachments_referenced=[digest])
+    )
+
+    result = infer(prompt="what", attachments=[Attachment(path=red_png)], profile=_profile())
+
+    assert result.meta.produced_by.attachments_referenced == [digest]
+    assert result.meta.produced_by.attachments == []
+
+
 def test_infer_raises_when_handler_drops_attachment_digests(stub_handler, red_png) -> None:
     # The handler sent the image (as far as infer() knows) but reported
     # nothing, which would stamp a text-only record on an image call.

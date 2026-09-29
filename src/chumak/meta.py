@@ -32,6 +32,7 @@ def build_meta(
     prompt: str | None,
     provenance: Provenance | None = None,
     attachments: Sequence[AttachmentDigest] = (),
+    attachments_referenced: Sequence[AttachmentDigest] = (),
 ) -> Meta:
     """Stamp the `Meta` / `ProducedBy` / `Cost` / `Citation` envelope for one call.
 
@@ -55,6 +56,9 @@ def build_meta(
         provenance: Optional artefact identifiers and upstream references.
         attachments: Digests of the attachments sent with `prompt`, in order
             (`Attachment.digest()` for a call made outside `infer()`).
+        attachments_referenced: Digests of attachments passed as paths in
+            `prompt` rather than sent, in order. Recorded apart from
+            `attachments` because nothing confirms the transport read them.
     """
     template_sha = provenance.prompt_template_sha256 if provenance else None
     return Meta(
@@ -68,6 +72,7 @@ def build_meta(
             prompt_template_sha256=template_sha,
             prompt_actual_sha256=_sha256_or_none(prompt),
             attachments=list(attachments),
+            attachments_referenced=list(attachments_referenced),
         ),
         generated_at=datetime.now(UTC),
         cost=_extract_cost(raw),

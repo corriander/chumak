@@ -12,6 +12,7 @@ TOML / env-overlay machinery that builds these.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
@@ -81,6 +82,17 @@ class Profile(BaseModel):
         default=None,
         description="Subprocess profiles only. Seconds before the CLI is killed.",
     )
+    attachment_ref: str | None = Field(
+        default=None,
+        description=(
+            "Subprocess profiles only. How the CLI references a file in its prompt: "
+            "a template in which `{path}` stands for an attachment's absolute path, "
+            "e.g. `{path}` for `ollama run`, `@{path}` for `claude -p`. Setting it "
+            "lets the profile take attachments; unset, they are rejected. `{path}` "
+            "is replaced literally, with no quoting or escaping, and is the only "
+            "placeholder allowed."
+        ),
+    )
 
     @model_validator(mode="after")
     def _check_handler_fields(self) -> Profile:
@@ -91,6 +103,8 @@ class Profile(BaseModel):
                 raise ValueError(
                     f"Profile {self.name!r}: subprocess profiles must set `prompt_delivery`"
                 )
+            if self.attachment_ref is not None:
+                _check_attachment_ref(self.name, self.attachment_ref)
             if self.model_kwargs:
                 raise ValueError(
                     f"Profile {self.name!r}: subprocess profiles cannot set "
@@ -113,6 +127,7 @@ class Profile(BaseModel):
                 "command": self.command,
                 "prompt_delivery": self.prompt_delivery,
                 "timeout": self.timeout,
+                "attachment_ref": self.attachment_ref,
             }
             extras = [k for k, v in forbidden.items() if v is not None]
             if extras:
@@ -125,3 +140,20 @@ class Profile(BaseModel):
     @property
     def is_subprocess(self) -> bool:
         return self.handler is HandlerType.SUBPROCESS
+
+
+# Anything in braces, so a mistyped placeholder (`{pth}`, `{file}`) fails at
+# load instead of reaching the CLI as literal text.
+_PLACEHOLDER_RE = re.compile(r"\{[^{}]*\}")
+
+
+def _check_attachment_ref(name: str, template: str) -> None:
+    # Messages name no placeholder: validation errors never echo input.
+    placeholders = set(_PLACEHOLDER_RE.findall(template))
+    if "{path}" not in placeholders:
+        raise ValueError(f"Profile {name!r}: `attachment_ref` must contain `{{path}}`")
+    if placeholders - {"{path}"}:
+        raise ValueError(
+            f"Profile {name!r}: `attachment_ref` has a placeholder other than `{{path}}`, "
+            "the only one chumak fills in"
+        )

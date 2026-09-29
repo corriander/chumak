@@ -93,6 +93,47 @@ def test_langchain_profile_rejects_subprocess_only_fields() -> None:
         )
 
 
+def test_langchain_profile_rejects_attachment_ref() -> None:
+    with pytest.raises(ValidationError, match=r"\['attachment_ref'\] are only valid when"):
+        Profile(
+            name="claude",
+            handler=HandlerType.LANGCHAIN,
+            model="anthropic:claude-opus-4-7",
+            attachment_ref="{path}",
+        )
+
+
+def _subprocess_with_ref(attachment_ref: str) -> Profile:
+    return Profile(
+        name="cli",
+        handler=HandlerType.SUBPROCESS,
+        model="llava",
+        command="ollama run llava",
+        prompt_delivery=PromptDelivery.STDIN,
+        attachment_ref=attachment_ref,
+    )
+
+
+@pytest.mark.parametrize("template", ["{path}", "@{path}", '@"{path}"', "{{path}}"])
+def test_attachment_ref_accepts_a_path_placeholder(template: str) -> None:
+    assert _subprocess_with_ref(template).attachment_ref == template
+
+
+@pytest.mark.parametrize("template", ["@path", "@{pth}", "{}", "", "{ path }"])
+def test_attachment_ref_requires_the_path_placeholder(template: str) -> None:
+    with pytest.raises(ValidationError, match=r"must contain `\{path\}`"):
+        _subprocess_with_ref(template)
+
+
+@pytest.mark.parametrize("template", ["{path} {mime}", "{path} {}", "{file} {path}"])
+def test_attachment_ref_rejects_other_placeholders(template: str) -> None:
+    # A mistyped or hoped-for placeholder would otherwise reach the CLI as text.
+    with pytest.raises(ValidationError, match="placeholder other than") as excinfo:
+        _subprocess_with_ref(template)
+    assert "{mime}" not in str(excinfo.value)  # no input echoed
+    assert "{file}" not in str(excinfo.value)
+
+
 def test_subprocess_profile_full_shape() -> None:
     p = Profile(
         name="cli",
