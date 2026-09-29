@@ -35,7 +35,9 @@ def infer(
             `Attachment`). Supported by the langchain handler, which builds
             a multimodal message; the subprocess handler rejects them (use
             the CLI's own path-reference idiom in the prompt instead). Each
-            attachment's digest lands in `meta.produced_by.attachments`.
+            attachment's digest lands in `meta.produced_by.attachments`; if
+            the handler reports a different number of digests, `infer()`
+            raises `RuntimeError` rather than record the call wrongly.
         output_schema: Optional Pydantic `BaseModel` subclass. When given, the
             handler returns a validated instance of it in `result.payload`.
             When omitted (``None``), the call is untyped: `result.payload` is
@@ -49,9 +51,9 @@ def infer(
     """
     handler_cls = HANDLER_REGISTRY[profile.handler]
     handler = handler_cls()
-    # Text-only calls omit the keyword, so a handler written before
-    # attachments existed — `execute(prompt, output_schema, profile)` — still
-    # works. Non-empty attachments to such a handler fail loudly at the call.
+    # Every handler takes `attachments`. Omitting the keyword on text-only
+    # calls is a safety net for one registered from outside the package
+    # before attachments existed (see `chumak.handlers.base`).
     extra = {"attachments": attachments} if attachments else {}
     handler_result = handler.execute(
         prompt=prompt,
@@ -59,6 +61,15 @@ def infer(
         profile=profile,
         **extra,
     )
+    # A handler that sent images but reported no digests would leave a record
+    # that reads as a text-only call. The count is all that can be checked.
+    reported = len(handler_result.attachments)
+    if reported != len(attachments):
+        raise RuntimeError(
+            f"{handler_cls.__name__} reported {reported} attachment digest(s) for "
+            f"{len(attachments)} attachment(s) (profile {profile.name!r}), so the call's "
+            "provenance can't be recorded: a handler must report one digest per attachment"
+        )
     # No rendered prompt means the sent text is unknown — a handler may have
     # augmented it — so it is not assumed to be the caller's text.
     meta = build_meta(

@@ -335,7 +335,7 @@ everything in between.
 from chumak import build_meta, resolve_model
 
 model = resolve_model(profile)  # the same chat model infer() would use for this profile
-response = model.invoke(prompt)  # or .stream(), or hand `model` to your graph
+response = model.invoke(prompt)  # or hand `model` to your graph
 meta = build_meta(response, profile=profile, prompt=prompt)  # same envelope infer() stamps
 ```
 
@@ -345,6 +345,26 @@ meta = build_meta(response, profile=profile, prompt=prompt)  # same envelope inf
   `ProfileCapabilityError` rather than pretending.
 - `build_meta` stamps one call. Compose run-level lineage yourself with
   `Provenance` / `ArtefactRef` / `derived_from` — chumak records, it never runs the loop.
+- **`prompt` is the one string you sent**, hashed into `prompt_actual_sha256`. A
+  multi-turn conversation sends a list of messages instead, and chumak defines no hash
+  for one, so pass `prompt=None`: the envelope then records no prompt hash. Hashing
+  your own serialisation of the messages would give a hash no other consumer could
+  reproduce.
+- **Aggregate a stream before stamping it.** `build_meta` needs the whole reply, not a
+  chunk. Adding `AIMessageChunk`s together gives one message:
+
+  ```python
+  response = None
+  for chunk in model.stream(prompt):
+      ...  # render the chunk
+      response = chunk if response is None else response + chunk
+  meta = build_meta(response, profile=profile, prompt=prompt)
+  ```
+
+  Token counts arrive only if the provider reports usage while streaming; otherwise
+  `meta.cost` is empty. Some report it only when asked: as of langchain-openai 1.6, an
+  `openai:` profile with its own `base_url` leaves it off, so set `stream_usage = true`
+  in its `model_kwargs` if the server supports it.
 - No graph, conversation, callback, or streaming abstractions live here; LangChain /
   LangGraph objects are the consumer's domain.
 

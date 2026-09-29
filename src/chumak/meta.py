@@ -38,12 +38,20 @@ def build_meta(
     Arguments:
         raw: The native response object. An `AIMessage` yields token usage
             and citations; anything else (e.g. the subprocess handler's
-            `SubprocessRaw`) yields empty best-effort fields.
+            `SubprocessRaw`) yields empty best-effort fields. For a streamed
+            call, pass the whole reply: the sum of its `AIMessageChunk`s,
+            which is itself an `AIMessage`. One chunk carries only its own
+            share of the content and usage.
         profile: The `Profile` the call was made with. Supplies model
             identity for `produced_by`.
-        prompt: The exact text sent to the transport. Hashed into
-            `produced_by.prompt_actual_sha256`; never stored verbatim.
-            `None` means the sent text is unknown, and records no hash.
+        prompt: The one string sent to the transport, exactly as sent.
+            Hashed into `produced_by.prompt_actual_sha256`; never stored
+            verbatim. `None` records no hash. Pass it when the sent text is
+            unknown, and for a multi-turn call, which sends a list of
+            messages rather than one string: chumak defines no hash for a
+            conversation. If a consumer needs one, it belongs in a separate,
+            versioned field over a canonical serialisation of the messages,
+            not here: `prompt_actual_sha256` only ever hashes one string.
         provenance: Optional artefact identifiers and upstream references.
         attachments: Digests of the attachments sent with `prompt`, in order
             (`Attachment.digest()` for a call made outside `infer()`).

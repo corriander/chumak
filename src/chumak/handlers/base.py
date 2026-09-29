@@ -12,13 +12,21 @@ chat model, a CLI subprocess, …) and returns:
     handlers). The meta builder hashes this for
     `produced_by.prompt_actual_sha256`.
   - `attachments`: digests of the attachments the handler actually sent,
-    stamped into `produced_by.attachments`. Empty for text-only calls.
+    one per attachment, in order, stamped into `produced_by.attachments`.
+    Empty for text-only calls.
 
-Attachment support is a per-handler capability. A handler that cannot carry
-them must reject a non-empty `attachments` loudly rather than drop them.
-`infer()` passes the `attachments` keyword only when there are some, so a
-handler that omits the parameter entirely stays valid for text-only calls,
-and a call with attachments fails at dispatch with a `TypeError`.
+Attachment support is a per-handler capability, but the parameter is not:
+every handler takes `attachments`, as the `Handler` protocol (and so
+`HANDLER_REGISTRY`'s type) requires. A handler that cannot carry them must
+reject a non-empty value loudly rather than drop them. A handler that sends
+them must report a digest for each; `infer()` raises when the count doesn't
+match, rather than record an image call as text-only.
+
+`infer()` still passes the keyword only when there are attachments. That is
+a safety net for a handler registered from outside this package before
+attachments existed: its text-only calls keep working, and a call with
+attachments fails at dispatch with a `TypeError`. It is not a licence to
+leave the parameter out.
 """
 
 from __future__ import annotations
