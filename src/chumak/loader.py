@@ -31,10 +31,13 @@ including secrets — supplied at process start by env vars.
 from __future__ import annotations
 
 import os
+import sys
 import tomllib
 from collections.abc import Collection, Mapping, MutableMapping
 from pathlib import Path
 from typing import Any
+
+import platformdirs
 
 from chumak.profile import Profile
 
@@ -55,14 +58,23 @@ class ProfileCycleError(ProfileLoaderError):
 
 
 def shared_profiles_dir(env: Mapping[str, str] | None = None) -> Path:
-    """The cross-app profile folder: `$XDG_CONFIG_HOME/chumak/profiles`.
+    """The cross-app profile folder: `chumak/profiles` under a config folder.
 
-    Falls back to `~/.config/chumak/profiles` when `XDG_CONFIG_HOME` is unset
-    or not absolute (the XDG spec says to ignore relative values). "Absolute"
-    is judged by the host OS, so on Windows a POSIX-style `/home/...` value
-    also falls back. The same layout is used on every platform; there is no
-    `%APPDATA%` special case. The directory need not exist; `ProfileLoader`
-    skips search paths that aren't there.
+    On Linux the config folder is the XDG one: `$XDG_CONFIG_HOME`, or
+    `~/.config` when that is unset or not absolute (the XDG spec says to
+    ignore relative values). That is also the platform's own convention.
+
+    On Windows and macOS it is the platform's own, `%APPDATA%` (roaming) or
+    `~/Library/Application Support`, unless a `chumak` folder already exists
+    in the XDG location above. Plenty of people keep dotfiles under
+    `~/.config` everywhere, so that layout is honoured, but not assumed. The
+    choice covers the whole `chumak` folder: when the XDG one exists,
+    everything is expected there and the platform folder is not consulted,
+    so the two are never mixed. "Absolute" is judged by the host OS, so on
+    Windows a POSIX-style `/home/...` value counts as unset.
+
+    The returned directory need not exist; `ProfileLoader` skips search
+    paths that aren't there.
 
     chumak never adds this to a loader itself. An app opts in by listing it
     after its own directory, so the app can still shadow a shared profile:
@@ -70,13 +82,23 @@ def shared_profiles_dir(env: Mapping[str, str] | None = None) -> Path:
         ProfileLoader(search_paths=[app_dir, shared_profiles_dir()], ...)
 
     Reads `XDG_CONFIG_HOME` only when called. `env` defaults to `os.environ`
-    and is overridable for testing; it governs `XDG_CONFIG_HOME` only. The
-    fallback comes from `Path.home()`, which reads the real environment.
+    and is overridable for testing; it is the only source of
+    `XDG_CONFIG_HOME`. `~` comes from `Path.home()`, which reads the real
+    environment, and `%APPDATA%` from `platformdirs`, which asks Windows.
     """
     env = env if env is not None else os.environ
     xdg = env.get("XDG_CONFIG_HOME", "")
     base = Path(xdg) if xdg and Path(xdg).is_absolute() else Path.home() / ".config"
-    return base / "chumak" / "profiles"
+    root = base / "chumak"
+    if not root.is_dir():
+        if sys.platform == "win32":
+            root = platformdirs.user_config_path("chumak", appauthor=False, roaming=True)
+        elif sys.platform == "darwin":
+            # Not platformdirs: its macOS backend lets the process's
+            # $XDG_CONFIG_HOME override Application Support, which would undo
+            # the existence check above and ignore `env`.
+            root = Path.home() / "Library" / "Application Support" / "chumak"
+    return root / "profiles"
 
 
 class ProfileLoader:

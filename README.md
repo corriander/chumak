@@ -117,9 +117,20 @@ chumak does not impose a config dir; the app passes `search_paths` to `ProfileLo
 ### Shared profiles
 
 To define a profile once and use it from several apps, put it in the shared folder,
-`$XDG_CONFIG_HOME/chumak/profiles/` (by default `~/.config/chumak/profiles/`). Apps then
-ask for it by name (`loader.load("jev")`), and which model that name means is decided
-in one place.
+`shared_profiles_dir()`:
+
+- **Linux:** `$XDG_CONFIG_HOME/chumak/profiles/` (by default
+  `~/.config/chumak/profiles/`).
+- **Windows:** `%APPDATA%\chumak\profiles\`.
+- **macOS:** `~/Library/Application Support/chumak/profiles/`.
+
+On Windows and macOS, a `chumak` folder in the XDG location (`$XDG_CONFIG_HOME/chumak`,
+or `~/.config/chumak`) overrides the platform folder. Create it if you'd rather keep
+chumak's config with your other dotfiles. It's all-or-nothing: once that folder exists,
+everything is expected there and the platform folder is not consulted.
+
+Apps then ask for it by name (`loader.load("jev")`), and which model that name means is
+decided in one place.
 
 chumak never searches the shared folder on its own. An app opts in by listing it after
 its own directory:
@@ -139,9 +150,6 @@ shared file never needs to hold one. `extends` resolves through the same search 
 so an app profile can extend a shared one, but only under a different name: an app's
 `jev.toml` with `extends = "jev"` finds itself first and fails as a cycle. Name the
 variant (`my-jev.toml`, `extends = "jev"`) instead.
-
-The folder follows XDG on every platform, Windows included (`~/.config`, not
-`%APPDATA%`).
 
 ### File shape
 
