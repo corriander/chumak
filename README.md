@@ -119,13 +119,15 @@ chumak does not impose a config dir; the app passes `search_paths` to `ProfileLo
 To define a profile once and use it from several apps, put it in the shared folder,
 `shared_profiles_dir()`:
 
-- **Linux and macOS:** `$XDG_CONFIG_HOME/chumak/profiles/` (by default
+- **Linux:** `$XDG_CONFIG_HOME/chumak/profiles/` (by default
   `~/.config/chumak/profiles/`).
-- **Windows:** `%APPDATA%\chumak\profiles\`, unless a `chumak` folder already exists in
-  the XDG location above (`$XDG_CONFIG_HOME\chumak` or `~\.config\chumak`). Create that
-  folder if you'd rather keep chumak's config with your other dotfiles. It's
-  all-or-nothing: once it exists, everything is expected there and `%APPDATA%` is not
-  consulted.
+- **Windows:** `%APPDATA%\chumak\profiles\`.
+- **macOS:** `~/Library/Application Support/chumak/profiles/`.
+
+On Windows and macOS, a `chumak` folder in the XDG location (`$XDG_CONFIG_HOME/chumak`,
+or `~/.config/chumak`) overrides the platform folder. Create it if you'd rather keep
+chumak's config with your other dotfiles. It's all-or-nothing: once that folder exists,
+everything is expected there and the platform folder is not consulted.
 
 Apps then ask for it by name (`loader.load("jev")`), and which model that name means is
 decided in one place.
