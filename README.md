@@ -28,6 +28,7 @@ Three built-in handlers:
 - **`subprocess`** — shells out to a CLI (`claude --print`, `codex exec`, etc.).
   Useful for prompt iteration via an existing, authorised tool.
   Schema is injected into the prompt as JSON Schema; stdout is parsed and validated.
+  The CLI gets its prompt as UTF-8 and must answer in UTF-8, whatever the locale.
   Requires an `output_schema` — untyped generation is a langchain-handler capability.
   Takes image attachments only if the profile says how its CLI references a file (see
   "With an image").

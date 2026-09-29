@@ -7,7 +7,9 @@ JSON matching the schema, and stdout is parsed and validated.
 The profile shape stays minimal: a verbatim `command` (parsed via
 `shlex.split`), a delivery channel (`stdin` or trailing argv), and a
 timeout. Output is expected as JSON on stdout, optionally wrapped in a
-fenced code block.
+fenced code block. Both directions are UTF-8, whatever the machine's locale:
+the prompt goes in as exactly the bytes its hash covers, and output that
+isn't UTF-8 is an error.
 
 Attachments are opt-in per profile. CLIs that read images take them as a
 file path written into the prompt, and each spells that reference its own
@@ -191,21 +193,31 @@ class SubprocessHandler:
         delivery: PromptDelivery,
         timeout: float | None,
     ) -> subprocess.CompletedProcess[str]:
+        # Bytes, not text mode, on the pipes. Text mode would use the locale's
+        # codec (cp1252 on Windows, which can't carry a `✓` in an attachment
+        # path) and, on Windows, write `\n` as `\r\n`. UTF-8 bytes are exactly
+        # what `prompt_actual_sha256` hashes.
         if delivery is PromptDelivery.STDIN:
-            return subprocess.run(
+            proc = subprocess.run(
                 argv,
-                input=prompt,
+                input=prompt.encode("utf-8"),
                 capture_output=True,
-                text=True,
                 timeout=timeout,
                 check=False,
             )
-        if delivery is PromptDelivery.ARG:
-            return subprocess.run(
+        elif delivery is PromptDelivery.ARG:
+            proc = subprocess.run(
                 [*argv, prompt],
                 capture_output=True,
-                text=True,
                 timeout=timeout,
                 check=False,
             )
-        raise ValueError(f"Unknown prompt_delivery: {delivery}")
+        else:
+            raise ValueError(f"Unknown prompt_delivery: {delivery}")
+        try:
+            stdout = proc.stdout.decode("utf-8")
+        except UnicodeDecodeError as e:
+            raise ValueError(f"Subprocess {argv[0]!r} wrote non-UTF-8 output: {e}") from e
+        # stderr is only ever shown in errors, so a stray byte mustn't mask one.
+        stderr = proc.stderr.decode("utf-8", errors="replace")
+        return subprocess.CompletedProcess(proc.args, proc.returncode, stdout, stderr)

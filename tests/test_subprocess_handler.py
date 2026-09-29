@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shlex
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -50,6 +52,24 @@ def _fake_completed(
     return subprocess.CompletedProcess(
         args=["claude", "--print"], returncode=returncode, stdout=stdout, stderr=stderr
     )
+
+
+def _completed_bytes(argv: list[str]) -> subprocess.CompletedProcess[bytes]:
+    """What `subprocess.run` itself returns: the pipes are bytes."""
+    return subprocess.CompletedProcess(
+        args=argv, returncode=0, stdout=b'{"name": "x", "count": 1}', stderr=b""
+    )
+
+
+def test_non_utf8_output_is_a_clear_error(mocker) -> None:
+    mocker.patch(
+        "chumak.handlers.subprocess.subprocess.run",
+        return_value=subprocess.CompletedProcess(
+            args=["claude"], returncode=0, stdout=b'{"name": "caf\xe9", "count": 1}', stderr=b""
+        ),
+    )
+    with pytest.raises(ValueError, match="non-UTF-8 output"):
+        SubprocessHandler().execute(prompt="extract", output_schema=Out, profile=_profile())
 
 
 def test_build_subprocess_prompt_embeds_schema() -> None:
@@ -208,8 +228,8 @@ def test_infer_records_referenced_attachments_apart_from_sent_ones(mocker, tmp_p
     seen: dict[str, Any] = {}
 
     def fake_run(argv, **kw):  # type: ignore[no-untyped-def]
-        seen["prompt"] = kw["input"]
-        return _fake_completed('{"name": "x", "count": 1}')
+        seen["prompt"] = kw["input"].decode("utf-8")
+        return _completed_bytes(argv)
 
     mocker.patch("chumak.handlers.subprocess.subprocess.run", side_effect=fake_run)
 
@@ -307,7 +327,7 @@ def test_arg_delivery_appends_prompt_to_argv(mocker: Any) -> None:
 
     def fake_run(argv, **kw):  # type: ignore[no-untyped-def]
         seen["argv"] = argv
-        return _fake_completed('{"name": "x", "count": 1}')
+        return _completed_bytes(argv)
 
     mocker.patch("chumak.handlers.subprocess.subprocess.run", side_effect=fake_run)
     handler.execute(
@@ -317,3 +337,42 @@ def test_arg_delivery_appends_prompt_to_argv(mocker: Any) -> None:
     )
     assert seen["argv"][0] == "claude"
     assert "extract" in seen["argv"][-1]
+
+
+# --- Real process -----------------------------------------------------------
+
+# A child that reports the SHA-256 of the exact bytes it received (on stdin,
+# or as its last argument) as an `Out` payload.
+_HASH_WHAT_ARRIVED = (
+    "import hashlib, json, sys; "
+    "data = sys.stdin.buffer.read() if sys.argv[1] == 'stdin' else sys.argv[2].encode('utf-8'); "
+    "print(json.dumps({'name': hashlib.sha256(data).hexdigest(), 'count': len(data)}))"
+)
+
+
+@pytest.mark.parametrize("delivery", [PromptDelivery.STDIN, PromptDelivery.ARG])
+def test_a_real_cli_receives_exactly_the_hashed_utf8(delivery: PromptDelivery, tmp_path) -> None:
+    """Regression: stdin was a text-mode pipe in the locale's encoding. On
+    Windows that's cp1252, which can't encode `✓` (the call hung until its
+    timeout), and it writes `\n` as `\r\n`, so the CLI got bytes the prompt
+    hash doesn't cover. The mocked tests above can't see either."""
+    attachment = _swatch(tmp_path / "café ✓")
+    profile = Profile(
+        name="hash-what-arrived",
+        handler=HandlerType.SUBPROCESS,
+        model="python",
+        command=f"{shlex.quote(sys.executable)} -c {shlex.quote(_HASH_WHAT_ARRIVED)} "
+        f"{delivery.value}",
+        prompt_delivery=delivery,
+        timeout=20.0,
+        attachment_ref="{path}",
+    )
+
+    result = infer(
+        prompt="naïve → extract",
+        attachments=[attachment],
+        output_schema=Out,
+        profile=profile,
+    )
+
+    assert result.payload.name == result.meta.produced_by.prompt_actual_sha256
