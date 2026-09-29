@@ -82,16 +82,22 @@ def shared_profiles_dir(env: Mapping[str, str] | None = None) -> Path:
         ProfileLoader(search_paths=[app_dir, shared_profiles_dir()], ...)
 
     Reads `XDG_CONFIG_HOME` only when called. `env` defaults to `os.environ`
-    and is overridable for testing; it governs `XDG_CONFIG_HOME` only.
-    `~` comes from `Path.home()`, which reads the real environment, and the
-    platform folder from `platformdirs`.
+    and is overridable for testing; it is the only source of
+    `XDG_CONFIG_HOME`. `~` comes from `Path.home()`, which reads the real
+    environment, and `%APPDATA%` from `platformdirs`, which asks Windows.
     """
     env = env if env is not None else os.environ
     xdg = env.get("XDG_CONFIG_HOME", "")
     base = Path(xdg) if xdg and Path(xdg).is_absolute() else Path.home() / ".config"
     root = base / "chumak"
-    if sys.platform in ("win32", "darwin") and not root.is_dir():
-        root = platformdirs.user_config_path("chumak", appauthor=False, roaming=True)
+    if not root.is_dir():
+        if sys.platform == "win32":
+            root = platformdirs.user_config_path("chumak", appauthor=False, roaming=True)
+        elif sys.platform == "darwin":
+            # Not platformdirs: its macOS backend lets the process's
+            # $XDG_CONFIG_HOME override Application Support, which would undo
+            # the existence check above and ignore `env`.
+            root = Path.home() / "Library" / "Application Support" / "chumak"
     return root / "profiles"
 
 

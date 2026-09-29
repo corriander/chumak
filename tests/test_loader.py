@@ -13,6 +13,7 @@ import textwrap
 from pathlib import Path
 
 import platformdirs
+import platformdirs.macos
 import pytest
 from pydantic import ValidationError
 
@@ -337,16 +338,20 @@ def test_load_all(write_profile, make_loader, claude_base_body) -> None:
 
 @pytest.fixture
 def config_homes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
-    """Point `~` and the platform config folder at per-test folders, so no
-    test reads, or creates, the real ones. Returns `(home, platform_dir)`."""
+    """Point `~` and `%APPDATA%` at per-test folders, so no test reads, or
+    creates, the real ones. Returns `(home, appdata)`."""
     home = tmp_path / "home"
-    platform_dir = tmp_path / "platform"
+    appdata = tmp_path / "appdata"
     monkeypatch.setenv("HOME", str(home))  # Path.home() on POSIX
     monkeypatch.setenv("USERPROFILE", str(home))  # ... and on Windows
-    monkeypatch.setattr(
-        platformdirs, "user_config_path", lambda appname, **_: platform_dir / appname
-    )
-    return home, platform_dir
+    monkeypatch.setattr(platformdirs, "user_config_path", lambda appname, **_: appdata / appname)
+    return home, appdata
+
+
+def _platform_chumak(platform: str, home: Path, appdata: Path) -> Path:
+    if platform == "win32":
+        return appdata / "chumak"
+    return home / "Library" / "Application Support" / "chumak"
 
 
 def test_shared_profiles_dir_follows_xdg_config_home_on_linux(
@@ -382,9 +387,34 @@ def test_platform_config_dir_is_the_default(
     """With no `chumak` folder in the XDG location, Windows and macOS use
     their own config folder, even when `XDG_CONFIG_HOME` is set."""
     monkeypatch.setattr(sys, "platform", platform)
-    _, platform_dir = config_homes
+    home, appdata = config_homes
     env = {} if xdg is None else {"XDG_CONFIG_HOME": str(tmp_path / xdg)}
-    assert shared_profiles_dir(env) == platform_dir / "chumak" / "profiles"
+    assert shared_profiles_dir(env) == _platform_chumak(platform, home, appdata) / "profiles"
+
+
+@pytest.mark.parametrize("xdg", [None, "xdg"])
+def test_macos_ignores_xdg_without_a_chumak_folder_there(
+    xdg: str | None,
+    config_homes: tuple[Path, Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: platformdirs' macOS backend lets the process's
+    `$XDG_CONFIG_HOME` override Application Support. Asking it for the folder
+    would skip the existence check and leak past `env`. Wires in that real
+    backend, so the test fails if the loader ever calls it on macOS again."""
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setenv("XDG_CONFIG_HOME", "/process-xdg")  # POSIX-absolute, or it's ignored
+    monkeypatch.setattr(
+        platformdirs,
+        "user_config_path",
+        lambda appname, **kw: platformdirs.macos.MacOS(appname, **kw).user_config_path,
+    )
+    home, _ = config_homes
+    env = {} if xdg is None else {"XDG_CONFIG_HOME": str(tmp_path / xdg)}
+
+    expected = home / "Library" / "Application Support" / "chumak" / "profiles"
+    assert shared_profiles_dir(env) == expected
 
 
 @pytest.mark.parametrize("platform", ["win32", "darwin"])
@@ -399,28 +429,36 @@ def test_an_existing_xdg_chumak_folder_wins(
     """The `chumak` folder alone decides, not `profiles` inside it, and it
     wins over an existing platform `chumak` folder: the two are never mixed."""
     monkeypatch.setattr(sys, "platform", platform)
-    home, platform_dir = config_homes
+    home, appdata = config_homes
     env = {} if xdg is None else {"XDG_CONFIG_HOME": str(tmp_path / xdg)}
     base = home / ".config" if xdg is None else tmp_path / xdg
     (base / "chumak").mkdir(parents=True)
-    (platform_dir / "chumak" / "profiles").mkdir(parents=True)
+    (_platform_chumak(platform, home, appdata) / "profiles").mkdir(parents=True)
 
     assert shared_profiles_dir(env) == base / "chumak" / "profiles"
 
 
+# The two real-folder tests also set the process's XDG_CONFIG_HOME (with no
+# `chumak` under it), so a lookup that honours it can't pass unnoticed.
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="asks Windows for the real folder")
-def test_windows_platform_config_dir_is_roaming_appdata(tmp_path: Path) -> None:
+def test_windows_platform_config_dir_is_roaming_appdata(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Pins the `platformdirs` arguments: roaming, not local, and no doubled
     `chumak\\chumak` from a defaulted app author."""
-    env = {"XDG_CONFIG_HOME": str(tmp_path)}
-    assert shared_profiles_dir(env) == Path(os.environ["APPDATA"]) / "chumak" / "profiles"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    assert shared_profiles_dir() == Path(os.environ["APPDATA"]) / "chumak" / "profiles"
 
 
-@pytest.mark.skipif(sys.platform != "darwin", reason="asks platformdirs for the real macOS folder")
-def test_macos_platform_config_dir_is_application_support(tmp_path: Path) -> None:
-    env = {"XDG_CONFIG_HOME": str(tmp_path)}
+@pytest.mark.skipif(sys.platform != "darwin", reason="resolves the real macOS folder")
+def test_macos_platform_config_dir_is_application_support(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     expected = Path.home() / "Library" / "Application Support" / "chumak" / "profiles"
-    assert shared_profiles_dir(env) == expected
+    assert shared_profiles_dir() == expected
 
 
 def test_app_dir_shadows_shared_and_shared_fills_gaps(tmp_path: Path, config_homes) -> None:
