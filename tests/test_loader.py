@@ -212,20 +212,27 @@ def test_unknown_field_under_overlapping_names_fails_on_the_longer(
         loader.load("child-account")
 
 
-def test_two_field_readings_raise_rather_than_guess(
-    write_profile, make_loader, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """No current pair of fields allows this (it needs fields `f` and `x_f`), so
-    fake one: with a `kwargs` field, `..._A_MODEL_KWARGS__X` would fit both."""
-    import chumak.loader
-
-    monkeypatch.setattr(chumak.loader, "_PROFILE_FIELDS", {"model_kwargs", "kwargs"})
+def _two_field_readings(write_profile, make_loader):
+    """`--` in a profile name normalises to the `__` nesting delimiter, so
+    `..._A_MODEL_KWARGS__B_TEMPERATURE` reads as `a`'s `model_kwargs.b_temperature`
+    and as `a-model-kwargs--b`'s `temperature`: two real fields."""
     write_profile("a", _MINIMAL)
-    write_profile("a-model", _MINIMAL)
-    loader = make_loader(env={"TESTAPP_PROFILE_A_MODEL_KWARGS__X": "1"})
-    for name in ("a", "a-model"):
+    write_profile("a-model-kwargs--b", _MINIMAL)
+    write_profile("independent", _MINIMAL)
+    return make_loader(env={"TESTAPP_PROFILE_A_MODEL_KWARGS__B_TEMPERATURE": "0.5"})
+
+
+def test_two_field_readings_raise_rather_than_guess(write_profile, make_loader) -> None:
+    loader = _two_field_readings(write_profile, make_loader)
+    for name in ("a", "a-model-kwargs--b"):
         with pytest.raises(ProfileLoaderError, match="ambiguous"):
             loader.load(name)
+
+
+def test_ambiguous_var_does_not_block_unrelated_profiles(write_profile, make_loader) -> None:
+    """Only the profiles that dispute the variable fail to load."""
+    loader = _two_field_readings(write_profile, make_loader)
+    assert loader.load("independent").temperature is None
 
 
 def test_empty_file_can_be_fully_env_driven(write_profile, make_loader) -> None:

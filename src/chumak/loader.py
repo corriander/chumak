@@ -260,12 +260,15 @@ def _apply_env_overlay(
     import json
 
     known = {*known, profile}  # a candidate even if `names()` can't list it
+    own_prefix = f"{prefix}{profile}_"
     for env_key, env_val in env.items():
-        if not env_key.startswith(prefix):
+        # Filter before `_env_owner`, so a variable that other profiles
+        # dispute can't fail this profile's load.
+        if not env_key.startswith(own_prefix):
             continue
         if _env_owner(env_key, prefix=prefix, known=known) != profile:
             continue
-        path = env_key[len(prefix) + len(profile) + 1 :].split(_NEST_DELIM)
+        path = env_key[len(own_prefix) :].split(_NEST_DELIM)
         coerced = _coerce_env_value(env_val, json_loads=json.loads)
         _set_nested(target, path, coerced)
 
