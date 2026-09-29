@@ -85,7 +85,7 @@ def test_infer_with_provenance_populates_artefact_fields(stub_handler) -> None:
     assert result.meta.artefact_id == "screenshot:abc"
 
 
-def test_infer_stamps_handler_attachment_digests_into_meta(stub_handler) -> None:
+def test_infer_stamps_handler_attachment_digests_into_meta(stub_handler, red_png) -> None:
     digest = AttachmentDigest(sha256="ab" * 32, mime="image/png")
     stub_handler(
         HandlerResult(
@@ -93,9 +93,26 @@ def test_infer_stamps_handler_attachment_digests_into_meta(stub_handler) -> None
         )
     )
 
-    result = infer(prompt="what", profile=_profile())
+    result = infer(prompt="what", attachments=[Attachment(path=red_png)], profile=_profile())
 
     assert result.meta.produced_by.attachments == [digest]
+
+
+def test_infer_raises_when_handler_drops_attachment_digests(stub_handler, red_png) -> None:
+    # The handler sent the image (as far as infer() knows) but reported
+    # nothing, which would stamp a text-only record on an image call.
+    stub_handler(HandlerResult(payload="a red square", rendered_prompt="what"))
+
+    with pytest.raises(RuntimeError, match=r"reported 0 attachment digest\(s\) for 1"):
+        infer(prompt="what", attachments=[Attachment(path=red_png)], profile=_profile())
+
+
+def test_infer_raises_when_handler_reports_digests_for_a_text_only_call(stub_handler) -> None:
+    digest = AttachmentDigest(sha256="ab" * 32, mime="image/png")
+    stub_handler(HandlerResult(payload="pong", rendered_prompt="ping", attachments=[digest]))
+
+    with pytest.raises(RuntimeError, match=r"reported 1 attachment digest\(s\) for 0"):
+        infer(prompt="ping", profile=_profile())
 
 
 class _TextOnlyHandler:
@@ -113,7 +130,9 @@ class _TextOnlyHandler:
 @pytest.fixture
 def text_only_handler() -> Iterator[None]:
     original = HANDLER_REGISTRY[HandlerType.LANGCHAIN]
-    # Deliberately off-protocol: the point is that infer() still accepts it.
+    # Off-protocol on purpose, hence the ignore. Handlers must take
+    # `attachments`, but infer() keeps a runtime safety net for one registered
+    # from outside the package that predates them; these tests pin that net.
     HANDLER_REGISTRY[HandlerType.LANGCHAIN] = _TextOnlyHandler  # ty: ignore[invalid-assignment]
     try:
         yield

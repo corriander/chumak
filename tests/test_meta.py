@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import hashlib
 
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, AIMessageChunk
 
 from chumak.attachments import Attachment, AttachmentDigest
 from chumak.handlers.base import HandlerResult
@@ -93,6 +93,31 @@ def test_cost_extracted_from_aimessage_usage_metadata() -> None:
     meta = build_meta(raw, profile=_profile(), prompt="hi")
     assert meta.cost.tokens_in == 100
     assert meta.cost.tokens_out == 50
+
+
+def test_cost_extracted_from_an_aggregated_stream() -> None:
+    """The README's streaming recipe: summed chunks are an `AIMessage`, and
+    usage reported on separate chunks (input first, output last, as
+    Anthropic streams it) adds up."""
+    chunks = [
+        AIMessageChunk(
+            content="Haul ",
+            usage_metadata={"input_tokens": 12, "output_tokens": 0, "total_tokens": 12},
+        ),
+        AIMessageChunk(content="ore"),
+        AIMessageChunk(
+            content="",
+            usage_metadata={"input_tokens": 0, "output_tokens": 3, "total_tokens": 3},
+        ),
+    ]
+    response = None
+    for chunk in chunks:
+        response = chunk if response is None else response + chunk
+
+    meta = build_meta(response, profile=_profile(), prompt="hi")
+
+    assert meta.cost.tokens_in == 12
+    assert meta.cost.tokens_out == 3
 
 
 def test_cost_empty_when_raw_is_not_aimessage() -> None:
